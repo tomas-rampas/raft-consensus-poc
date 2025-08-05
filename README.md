@@ -10,8 +10,24 @@ This implementation showcases the Raft consensus protocol through:
 - **Interactive Simulation**: Real-time cluster observation with emoji-enhanced logging
 - **Comprehensive Testing**: 26 tests covering unit and integration scenarios
 
+## 🌐 Real-time Web Visualization
+
+**NEW: Interactive Web Dashboard Available!**
+
+This project includes a comprehensive web-based visualization that provides real-time observation of the Raft consensus algorithm through an intuitive graphical interface.
+
+**👉 [Complete Web Setup & Demo Guide](web/README.md) 👈**
+
+Features:
+- **Live Cluster Visualization**: Watch nodes transition between states in real-time
+- **Message Flow Animation**: See heartbeats, elections, and log replication
+- **Interactive Controls**: Submit commands, simulate failures, pause/resume
+- **Real-time Statistics**: Track elections, messages, and cluster health
+- **Event Timeline**: Chronological log with filtering capabilities
+
 ## 🚀 Quick Start
 
+### Backend Only (CLI)
 ```bash
 # Clone and build
 git clone <repository-url>
@@ -23,6 +39,15 @@ cargo run
 
 # Run tests
 cargo test --workspace
+```
+
+### With Web Visualization
+```bash
+# Start the backend (includes WebSocket + HTTP servers)
+cargo run
+
+# Open browser to http://127.0.0.1:8081
+# See detailed setup instructions in web/README.md
 ```
 
 ## 🏗️ Architecture
