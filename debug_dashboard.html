@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Dashboard Loading</title>
+</head>
+<body>
+    <h1>Debug Dashboard Loading</h1>
+    <div id="status"></div>
+    
+    <!-- Load scripts in order -->
+    <script>
+        const status = document.getElementById('status');
+        
+        function log(message) {
+            console.log(message);
+            status.innerHTML += '<div>' + message + '</div>';
+        }
+        
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = () => {
+                    log(`✅ Loaded: ${src}`);
+                    resolve();
+                };
+                script.onerror = (e) => {
+                    log(`❌ Failed to load: ${src} - ${e}`);
+                    reject(e);
+                };
+                document.head.appendChild(script);
+            });
+        }
+        
+        async function loadScripts() {
+            try {
+                log('🔄 Loading scripts...');
+                
+                await loadScript('http://127.0.0.1:8081/websocket.js');
+                log(`WebSocketManager available: ${typeof window.WebSocketManager}`);
+                
+                await loadScript('http://127.0.0.1:8081/visualization.js');
+                log(`RaftVisualization available: ${typeof window.RaftVisualization}`);
+                
+                await loadScript('http://127.0.0.1:8081/dashboard.js');
+                log(`RaftDashboard available: ${typeof window.RaftDashboard}`);
+                
+                await loadScript('http://127.0.0.1:8081/app.js');
+                log(`RaftApp available: ${typeof window.RaftApp}`);
+                
+                log('✅ All scripts loaded successfully!');
+                
+                // Try to create a dashboard instance
+                try {
+                    const dashboard = new window.RaftDashboard();
+                    log('✅ RaftDashboard instance created successfully!');
+                } catch (e) {
+                    log(`❌ Failed to create RaftDashboard: ${e.message}`);
+                }
+                
+            } catch (error) {
+                log(`❌ Script loading failed: ${error.message}`);
+            }
+        }
+        
+        window.addEventListener('load', loadScripts);
+    </script>
+</body>
+</html>

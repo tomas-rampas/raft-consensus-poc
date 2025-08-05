@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raft Consensus Algorithm - Real-time Visualization</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <h1>🗳️ Raft Consensus Algorithm</h1>
+            <p>Real-time cluster visualization</p>
+            <div class="connection-status" id="connectionStatus">
+                <span class="status-indicator" id="statusIndicator"></span>
+                <span id="connectionText">Connecting...</span>
+            </div>
+        </header>
+
+        <!-- Main Dashboard -->
+        <main class="main-content">
+            <!-- Top Row: Cluster Visualization and Control+Stats Panel side by side -->
+            <div class="top-row">
+                <!-- Cluster Visualization -->
+                <section class="visualization-panel">
+                    <div class="panel-header">
+                        <h2>🖥️ Cluster Visualization</h2>
+                        <div class="viz-controls">
+                            <label>
+                                <input type="checkbox" id="showHeartbeats" checked> Show Heartbeats
+                            </label>
+                            <label>
+                                <input type="checkbox" id="showMessages" checked> Show Messages
+                            </label>
+                        </div>
+                    </div>
+                    <div class="canvas-container">
+                        <canvas id="clusterCanvas" width="600" height="350"></canvas>
+                    </div>
+                </section>
+
+                <!-- Right Column: Control Panel + Statistics -->
+                <div class="right-column">
+                    <!-- Control Panel -->
+                    <section class="control-panel">
+                        <div class="panel-header">
+                            <h2>🎮 Control Panel</h2>
+                        </div>
+                        <div class="controls">
+                            <div class="control-group">
+                                <label for="commandInput">Submit Command:</label>
+                                <div class="input-group">
+                                    <input type="text" id="commandInput" placeholder="Enter command..." />
+                                    <button id="submitBtn" class="btn btn-primary btn-icon" title="Submit Command">📝</button>
+                                </div>
+                            </div>
+                            <div class="control-group">
+                                <button id="pauseBtn" class="btn btn-secondary">⏸️ Pause</button>
+                                <button id="clearBtn" class="btn btn-secondary">🧹 Clear</button>
+                                <button id="resetBtn" class="btn btn-danger">🔄 Reset</button>
+                                <button id="changeLeaderBtn" class="btn btn-warning">👑 Change Leader</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Statistics Panel -->
+                    <section class="stats-panel">
+                        <div class="panel-header">
+                            <h2>📈 Statistics</h2>
+                        </div>
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <h3>Total Messages</h3>
+                                <span id="totalMessages" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-card">
+                                <h3>Leader Elections</h3>
+                                <span id="leaderElections" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-card">
+                                <h3>Log Entries</h3>
+                                <span id="logEntries" class="stat-value">0</span>
+                            </div>
+                            <div class="stat-card">
+                                <h3>Current Term</h3>
+                                <span id="currentTerm" class="stat-value">0</span>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Bottom Row: Node Information and Event Timeline side by side -->
+            <div class="bottom-row">
+                <!-- Node Information Panel -->
+                <section class="nodes-panel">
+                    <div class="panel-header">
+                        <h2>📊 Node Information</h2>
+                    </div>
+                    <div id="nodesList" class="nodes-list">
+                        <!-- Node cards will be dynamically populated -->
+                    </div>
+                </section>
+
+                <!-- Event Timeline -->
+                <section class="timeline-panel">
+                    <div class="panel-header">
+                        <h2>⏰ Event Timeline</h2>
+                        <div class="timeline-controls">
+                            <label>
+                                <input type="checkbox" id="showHeartbeatEvents" checked> Show Heartbeats
+                            </label>
+                            <button id="timelineClearBtn" class="btn btn-small">Clear</button>
+                        </div>
+                    </div>
+                    <div id="eventTimeline" class="timeline">
+                        <!-- Timeline events will be dynamically populated -->
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts with cache busting -->
+    <script src="websocket.js?v=36"></script>
+    <script src="visualization.js?v=36"></script>
+    <script src="dashboard.js?v=36"></script>
+    <script src="app.js?v=36"></script>
+    
+    <!-- Debug script to test immediate DOM access -->
+    <script>
+        console.log('🔍 DOM Ready Test - Checking elements immediately:');
+        console.log('totalMessages:', document.getElementById('totalMessages'));
+        console.log('leaderElections:', document.getElementById('leaderElections'));
+        console.log('logEntries:', document.getElementById('logEntries'));
+        console.log('currentTerm:', document.getElementById('currentTerm'));
+        console.log('nodesList:', document.getElementById('nodesList'));
+        
+        // Check canvas element
+        const canvas = document.getElementById('clusterCanvas');
+        console.log('🎨 Canvas element:', canvas);
+        if (canvas) {
+            console.log('Canvas details:', {
+                width: canvas.width,
+                height: canvas.height,
+                clientWidth: canvas.clientWidth,
+                clientHeight: canvas.clientHeight,
+                offsetWidth: canvas.offsetWidth,
+                offsetHeight: canvas.offsetHeight,
+                style: canvas.style.cssText
+            });
+        }
+        
+        // Test immediate DOM update
+        const testElement = document.getElementById('totalMessages');
+        if (testElement) {
+            testElement.textContent = 'TEST_VALUE';
+            console.log('✅ Immediate DOM update test - set totalMessages to TEST_VALUE');
+        } else {
+            console.log('❌ Immediate DOM update test - totalMessages not found');
+        }
+        
+        // Global canvas test function 
+        window.testCanvasManually = function() {
+            console.log('🧪 Manual Canvas Test Started...');
+            const canvas = document.getElementById('clusterCanvas');
+            if (!canvas) {
+                console.error('❌ Canvas element not found!');
+                return;
+            }
+            
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                console.error('❌ Canvas context not found!');
+                return;
+            }
+            
+            try {
+                // Clear entire canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Set a white background so we can see something
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw test shapes
+                ctx.fillStyle = 'red';
+                ctx.fillRect(50, 50, 100, 100);
+                
+                ctx.fillStyle = 'blue';
+                ctx.fillRect(200, 50, 100, 100);
+                
+                ctx.fillStyle = 'green';
+                ctx.beginPath();
+                ctx.arc(400, 100, 50, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                // Add text
+                ctx.fillStyle = 'black';
+                ctx.font = '20px Arial';
+                ctx.fillText('MANUAL CANVAS TEST - SUCCESS!', 50, 200);
+                
+                console.log('✅ Manual canvas test completed - check for shapes!');
+                
+            } catch (error) {
+                console.error('❌ Manual canvas test failed:', error);
+            }
+        };
+        
+        // Test drawing nodes at fixed positions
+        window.testDrawNodes = function() {
+            console.log('🧪 Testing node drawing at fixed positions...');
+            const canvas = document.getElementById('clusterCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw white background
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw 5 nodes in a circle pattern like the real system
+            const centerX = canvas.clientWidth / 2;
+            const centerY = canvas.clientHeight / 2;
+            const radius = 150;
+            
+            for (let i = 0; i < 5; i++) {
+                const angle = (i / 5) * 2 * Math.PI - Math.PI / 2;
+                const x = centerX + Math.cos(angle) * radius;
+                const y = centerY + Math.sin(angle) * radius;
+                
+                // Draw node circle
+                ctx.fillStyle = '#74c0fc'; // follower blue
+                ctx.beginPath();
+                ctx.arc(x, y, 40, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                // Draw node border
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Draw node label
+                ctx.fillStyle = 'black';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`Node ${i}`, x, y);
+                
+                console.log(`Node ${i} drawn at (${x}, ${y})`);
+            }
+            
+            console.log('✅ Test nodes drawn - check visualization area!');
+        };
+        
+        // Auto-submit test command after 5 seconds
+        setTimeout(() => {
+            if (window.app && window.app.wsManager && window.app.wsManager.isConnected) {
+                console.log('🧪 Auto-submitting test command...');
+                window.app.wsManager.send({
+                    type: 'submit_command',
+                    command: 'test_command_' + Date.now()
+                });
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

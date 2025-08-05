@@ -1,0 +1,247 @@
+warning: unused import: `warn`
+ --> src/raft/algorithm.rs:5:35
+  |
+5 | use tracing::{debug, info, trace, warn};
+  |                                   ^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `std::convert::Infallible`
+ --> src/raft/websocket.rs:6:5
+  |
+6 | use std::convert::Infallible;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> src/raft/websocket.rs:7:5
+  |
+7 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused imports: `LogEntry`, `NodeId`, `NodeState`, and `Node`
+  --> src/raft.rs:28:16
+   |
+28 | pub use core::{LogEntry, Node, NodeId, NodeState};
+   |                ^^^^^^^^  ^^^^  ^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `EventBroadcaster`, `RaftEventType`, and `RaftEvent`
+  --> src/raft.rs:29:18
+   |
+29 | pub use events::{EventBroadcaster, RaftEvent, RaftEventType};
+   |                  ^^^^^^^^^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^^^^
+
+warning: unused imports: `AppendEntriesRequest`, `AppendEntriesResponse`, `RequestVoteRequest`, and `RequestVoteResponse`
+  --> src/raft.rs:31:5
+   |
+31 |     AppendEntriesRequest, AppendEntriesResponse, RequestVoteRequest, RequestVoteResponse,
+   |     ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ClusterChannels`, `NodeHandle`, and `run_node`
+  --> src/raft.rs:34:22
+   |
+34 | pub use simulation::{ClusterChannels, NodeHandle, run_node, spawn_cluster};
+   |                      ^^^^^^^^^^^^^^^  ^^^^^^^^^^  ^^^^^^^^
+
+warning: unused imports: `HttpServer`, `WebSocketServer`, and `spawn_websocket_server`
+  --> src/raft.rs:35:21
+   |
+35 | pub use websocket::{HttpServer, WebSocketConfig, WebSocketServer, spawn_websocket_server, spawn_websocket_server_with_channels};
+   |                     ^^^^^^^^^^                   ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `event_broadcaster`
+   --> src/raft/simulation.rs:341:5
+    |
+341 |     event_broadcaster: &EventBroadcaster,
+    |     ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_event_broadcaster`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `event_broadcaster`
+   --> src/raft/simulation.rs:385:5
+    |
+385 |     event_broadcaster: &EventBroadcaster,
+    |     ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_event_broadcaster`
+
+warning: field `last_applied` is never read
+  --> src/raft/core.rs:80:9
+   |
+76 | pub struct VolatileState {
+   |            ------------- field in this struct
+...
+80 |     pub last_applied: u64,
+   |         ^^^^^^^^^^^^
+   |
+   = note: `VolatileState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` on by default
+
+warning: method `get_commit_index` is never used
+   --> src/raft/core.rs:218:12
+    |
+145 | impl Node {
+    | --------- method in this implementation
+...
+218 |     pub fn get_commit_index(&self) -> u64 {
+    |            ^^^^^^^^^^^^^^^^
+
+warning: field `to` is never read
+   --> src/raft/rpc.rs:134:9
+    |
+130 |     AppendEntriesResponse {
+    |     --------------------- field in this variant
+...
+134 |         to: NodeId,
+    |         ^^
+    |
+    = note: `RpcMessage` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `from` and `to` are never read
+   --> src/raft/rpc.rs:150:9
+    |
+148 |     RequestVoteResponse {
+    |     ------------------- fields in this variant
+149 |         /// ID of the node sending this response
+150 |         from: NodeId,
+    |         ^^^^
+151 |         /// ID of the node this response is sent to
+152 |         to: NodeId,
+    |         ^^
+    |
+    = note: `RpcMessage` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `from` is never read
+   --> src/raft/rpc.rs:159:9
+    |
+157 |     ClientCommand {
+    |     ------------- field in this variant
+158 |         /// ID of the client (or simulation controller)
+159 |         from: NodeId,
+    |         ^^^^
+    |
+    = note: `RpcMessage` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: methods `from`, `to`, and `message_type` are never used
+   --> src/raft/rpc.rs:198:12
+    |
+167 | impl RpcMessage {
+    | --------------- methods in this implementation
+...
+198 |     pub fn from(&self) -> NodeId {
+    |            ^^^^
+...
+209 |     pub fn to(&self) -> NodeId {
+    |            ^^
+...
+220 |     pub fn message_type(&self) -> &'static str {
+    |            ^^^^^^^^^^^^
+
+warning: struct `NodeHandle` is never constructed
+  --> src/raft/simulation.rs:14:12
+   |
+14 | pub struct NodeHandle {
+   |            ^^^^^^^^^^
+   |
+   = note: `NodeHandle` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: associated items `new`, `send`, and `create_pair` are never used
+  --> src/raft/simulation.rs:25:12
+   |
+23 | impl NodeHandle {
+   | --------------- associated items in this implementation
+24 |     /// Creates a new NodeHandle with unbounded channels
+25 |     pub fn new(node_id: NodeId) -> Self {
+   |            ^^^
+...
+35 |     pub fn send(&self, message: RpcMessage) -> Result<(), mpsc::error::SendError<RpcMessage>> {
+   |            ^^^^
+...
+40 |     pub fn create_pair(node_id1: NodeId, node_id2: NodeId) -> (Self, Self) {
+   |            ^^^^^^^^^^^
+
+warning: method `all_node_ids` is never used
+   --> src/raft/simulation.rs:116:12
+    |
+56  | impl ClusterChannels {
+    | -------------------- method in this implementation
+...
+116 |     pub fn all_node_ids(&self) -> Vec<NodeId> {
+    |            ^^^^^^^^^^^^
+
+warning: associated function `message_sent` is never used
+   --> src/raft/events.rs:254:12
+    |
+184 | impl RaftEvent {
+    | -------------- associated function in this implementation
+...
+254 |     pub fn message_sent(
+    |            ^^^^^^^^^^^^
+
+warning: method `receiver_count` is never used
+   --> src/raft/events.rs:336:12
+    |
+315 | impl EventBroadcaster {
+    | --------------------- method in this implementation
+...
+336 |     pub fn receiver_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^^
+
+warning: function `spawn_websocket_server` is never used
+   --> src/raft/websocket.rs:409:14
+    |
+409 | pub async fn spawn_websocket_server(
+    |              ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `raft-poc` (bin "raft-poc") generated 22 warnings (run `cargo fix --bin "raft-poc"` to apply 8 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running `target/debug/raft-poc`
+[2m2025-08-05T19:08:08.717569Z[0m [32m INFO[0m [2mraft_poc[0m[2m:[0m 🚀 Raft POC starting...
+[2m2025-08-05T19:08:08.717656Z[0m [32m INFO[0m [2mraft_poc[0m[2m:[0m 📡 Spawning cluster with 5 nodes
+[2m2025-08-05T19:08:08.717678Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m 🎆 Creating cluster with 5 nodes
+[2m2025-08-05T19:08:08.717986Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m 🚀 Spawning node 0
+[2m2025-08-05T19:08:08.718095Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m 🚀 Spawning node 1
+[2m2025-08-05T19:08:08.718138Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m 🚀 Spawning node 2
+[2m2025-08-05T19:08:08.718148Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m 🚀 Spawning node 3
+[2m2025-08-05T19:08:08.718153Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m 🚀 Spawning node 4
+[2m2025-08-05T19:08:08.718162Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m ✅ All 5 nodes spawned successfully
+[2m2025-08-05T19:08:08.718167Z[0m [32m INFO[0m [2mraft_poc[0m[2m:[0m ✅ Cluster spawned successfully
+[2m2025-08-05T19:08:08.718174Z[0m [32m INFO[0m [2mraft_poc[0m[2m:[0m 🌐 Starting WebSocket server on 127.0.0.1:8082
+[2m2025-08-05T19:08:08.718178Z[0m [32m INFO[0m [2mraft_poc[0m[2m:[0m 🌐 Starting HTTP server on 127.0.0.1:8081
+[2m2025-08-05T19:08:08.718178Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m 🟢 Node 0 started as Follower [3mnode_id[0m[2m=[0m0
+[2m2025-08-05T19:08:08.718209Z[0m [32m INFO[0m [2mraft_poc[0m[2m:[0m 🔍 Cluster running with visualization:
+[2m2025-08-05T19:08:08.718213Z[0m [32m INFO[0m [2mraft_poc[0m[2m:[0m    WebSocket: ws://127.0.0.1:8082
+[2m2025-08-05T19:08:08.718217Z[0m [32m INFO[0m [2mraft_poc[0m[2m:[0m    Dashboard: http://127.0.0.1:8081
+
+=== Raft Cluster Interactive Console ===
+Dashboard: http://127.0.0.1:8081 (Web UI)
+WebSocket: ws://127.0.0.1:8082 (Direct API)
+Commands:
+  submit <command>  - Submit a command to the cluster
+  status           - Show cluster status
+  help             - Show this help message
+  quit             - Shutdown cluster and exit
+  Ctrl+C           - Force shutdown
+======================================
+
+[2m2025-08-05T19:08:08.718256Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m 🟢 Node 2 started as Follower [3mnode_id[0m[2m=[0m2
+[2m2025-08-05T19:08:08.718258Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m 🟢 Node 1 started as Follower [3mnode_id[0m[2m=[0m1
+[2m2025-08-05T19:08:08.718298Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m 🟢 Node 4 started as Follower [3mnode_id[0m[2m=[0m4
+[2m2025-08-05T19:08:08.718311Z[0m [32m INFO[0m [2mraft_poc::raft::simulation[0m[2m:[0m 🟢 Node 3 started as Follower [3mnode_id[0m[2m=[0m3
+[2m2025-08-05T19:08:08.718395Z[0m [32m INFO[0m [2mraft_poc::raft::websocket[0m[2m:[0m 🌐 HTTP server starting on 127.0.0.1:8081
+[2m2025-08-05T19:08:08.718418Z[0m [32m INFO[0m [2mraft_poc::raft::websocket[0m[2m:[0m 📁 Serving static files from: web
+raft> [2m2025-08-05T19:08:08.718683Z[0m [33m WARN[0m [2mraft_poc[0m[2m:[0m 📜 EOF reached, continuing in background mode for visualization...
+[2m2025-08-05T19:08:08.718729Z[0m [33m WARN[0m [2mraft_poc[0m[2m:[0m 💡 Access the web dashboard at http://127.0.0.1:8081
+[2m2025-08-05T19:08:08.718739Z[0m [33m WARN[0m [2mraft_poc[0m[2m:[0m 💡 Use Ctrl+C to shutdown
+[2m2025-08-05T19:08:08.737571Z[0m [32m INFO[0m [2mraft_poc::raft::websocket[0m[2m:[0m 🌐 WebSocket server starting on 127.0.0.1:8082
+[2m2025-08-05T19:08:08.903874Z[0m [33m WARN[0m [2mraft_poc::raft::simulation[0m[2m:[0m ⏰ Election timeout! Current state: Follower, term: 0 [3mnode_id[0m[2m=[0m1
+[2m2025-08-05T19:08:08.903974Z[0m [32m INFO[0m [2mraft_poc::raft::algorithm[0m[2m:[0m 🗳️  Starting election for term 1 [3mnode_id[0m[2m=[0m1
+[2m2025-08-05T19:08:08.904040Z[0m [32m INFO[0m [2mraft_poc::raft::algorithm[0m[2m:[0m 🎯 Became candidate for term 1, voted for self (1/3 votes) [3mnode_id[0m[2m=[0m1
+[2m2025-08-05T19:08:08.904148Z[0m [32m INFO[0m [2mraft_poc::raft::algorithm[0m[2m:[0m ✅ Vote granted! Now have 2/3 votes for term 1 [3mnode_id[0m[2m=[0m1
+[2m2025-08-05T19:08:08.904191Z[0m [32m INFO[0m [2mraft_poc::raft::algorithm[0m[2m:[0m ✅ Vote granted! Now have 3/3 votes for term 1 [3mnode_id[0m[2m=[0m1
+[2m2025-08-05T19:08:08.904205Z[0m [32m INFO[0m [2mraft_poc::raft::algorithm[0m[2m:[0m 👑 Became LEADER for term 1 with majority votes! [3mnode_id[0m[2m=[0m1
+[2m2025-08-05T19:08:08.904214Z[0m [32m INFO[0m [2mraft_poc::raft::algorithm[0m[2m:[0m ❤️  Starting to send heartbeats to 4 followers [3mnode_id[0m[2m=[0m1
+🔄 Auto-submitting test commands...
+[2m2025-08-05T19:10:14.433282Z[0m [32m INFO[0m [2mraft_poc::raft::websocket[0m[2m:[0m 🔗 New WebSocket connection from 127.0.0.1:3341
+[2m2025-08-05T19:10:14.435954Z[0m [32m INFO[0m [2mraft_poc::raft::websocket[0m[2m:[0m ✅ WebSocket connection established
+[2m2025-08-05T19:14:00.375864Z[0m [32m INFO[0m [2mraft_poc::raft::websocket[0m[2m:[0m 🔗 New WebSocket connection from 127.0.0.1:48130
+[2m2025-08-05T19:14:00.376609Z[0m [32m INFO[0m [2mraft_poc::raft::websocket[0m[2m:[0m ✅ WebSocket connection established
+[2m2025-08-05T19:14:10.446385Z[0m [31mERROR[0m [2mraft_poc::raft::websocket[0m[2m:[0m WebSocket message error: WebSocket protocol error: Connection reset without closing handshake
+[2m2025-08-05T19:14:10.446678Z[0m [32m INFO[0m [2mraft_poc::raft::websocket[0m[2m:[0m 🔌 WebSocket connection closed for 127.0.0.1:48130

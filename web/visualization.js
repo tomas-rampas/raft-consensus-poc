@@ -1,0 +1,1039 @@
+/**
+ * Canvas-based Raft Cluster Visualization Engine
+ * Renders nodes, connections, and real-time message flows
+ */
+
+class RaftVisualization {
+    constructor(canvasId) {
+        console.log('🎯 RaftVisualization constructor called with canvasId:', canvasId);
+        this.canvas = document.getElementById(canvasId);
+        console.log('🎯 Canvas element found:', this.canvas);
+        this.ctx = this.canvas.getContext('2d');
+        console.log('🎯 Canvas context created:', this.ctx);
+        
+        // Set up canvas
+        console.log('🎯 Calling setupCanvas()...');
+        this.setupCanvas();
+        
+        // Visualization state
+        this.nodes = new Map();
+        this.messages = [];
+        this.animations = [];
+        
+        // Performance monitoring
+        this.frameCount = 0;
+        this.lastPerformanceCheck = Date.now();
+        this.renderTimes = [];
+        this.lastRenderTime = Date.now();
+        
+        // Emergency recovery
+        this.setupEmergencyRecovery();
+        
+        // Message throttling
+        this.lastMessageTime = 0;
+        this.messageThrottleMs = 100; // Minimum 100ms between message animations
+        
+        // Animation settings
+        this.isAnimating = true;
+        this.lastFrameTime = 0;
+        this.animationSpeed = 1.0;
+        
+        // Dual animation system
+        this.animationId = null;
+        this.fallbackTimer = null;
+        this.useFallbackTimer = false;
+        
+        // Display settings
+        this.showHeartbeats = true;
+        this.showMessages = true;
+        this.showNodeLabels = true;
+        
+        // Colors and styling
+        this.colors = {
+            leader: '#51cf66',
+            candidate: '#ffd43b',
+            follower: '#74c0fc',
+            background: '#f8f9fa',
+            grid: '#e9ecef',
+            message: '#667eea',
+            heartbeat: '#ff8cc8',
+            vote: '#ffd43b',
+            text: '#333'
+        };
+        
+        // Node layout - initialize with defaults, will be updated by setupCanvas()
+        this.nodeRadius = 40;
+        this.clusterRadius = 150;
+        
+        // Test basic canvas functionality first
+        this.testBasicCanvas();
+        
+        // Start animation loop
+        this.startAnimation();
+        
+        // Handle canvas clicks
+        this.canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
+        
+        // Handle window resize
+        window.addEventListener('resize', () => this.handleResize());
+        
+        // Final check of center coordinates after constructor
+        console.log('🎯 Constructor complete - final center:', this.centerX, this.centerY);
+    }
+    
+    /**
+     * Set up canvas properties
+     */
+    setupCanvas() {
+        // Set up high DPI support
+        const dpr = window.devicePixelRatio || 1;
+        const rect = this.canvas.getBoundingClientRect();
+        
+        this.canvas.width = rect.width * dpr;
+        this.canvas.height = rect.height * dpr;
+        this.canvas.style.width = rect.width + 'px';
+        this.canvas.style.height = rect.height + 'px';
+        
+        this.ctx.scale(dpr, dpr);
+        
+        // Update layout calculations
+        this.centerX = rect.width / 2;
+        this.centerY = rect.height / 2;
+        
+        console.log('🎯 Canvas layout updated:', {
+            canvasWidth: this.canvas.width,
+            canvasHeight: this.canvas.height,
+            rectWidth: rect.width,
+            rectHeight: rect.height,
+            centerX: this.centerX,
+            centerY: this.centerY,
+            dpr: window.devicePixelRatio || 1
+        });
+        
+        console.log('🎯 Final center coordinates set to:', this.centerX, this.centerY);
+        
+        // Verify that the coordinates are actually set
+        if (this.centerX === 0 || this.centerY === 0) {
+            console.error('❌ Center coordinates still zero after setupCanvas!');
+        } else {
+            console.log('✅ Center coordinates successfully updated');
+        }
+    }
+    
+    /**
+     * Handle window resize
+     */
+    handleResize() {
+        this.setupCanvas();
+    }
+    
+    /**
+     * Update node information
+     * @param {number} nodeId - Node ID
+     * @param {Object} nodeData - Node state data
+     */
+    updateNode(nodeId, nodeData) {
+        console.log('🔄 Visualization updateNode called:', {
+            nodeId,
+            nodeData,
+            existingNode: this.nodes.has(nodeId)
+        });
+        
+        if (!this.nodes.has(nodeId)) {
+            // Calculate position for new node
+            const angle = (nodeId / 5) * 2 * Math.PI - Math.PI / 2; // Assume 5 nodes for now
+            const x = this.centerX + Math.cos(angle) * this.clusterRadius;
+            const y = this.centerY + Math.sin(angle) * this.clusterRadius;
+            
+            console.log(`🎯 Calculating position for node ${nodeId}:`, {
+                angle: angle,
+                centerX: this.centerX,
+                centerY: this.centerY,
+                clusterRadius: this.clusterRadius,
+                finalX: x,
+                finalY: y
+            });
+            
+            const newNode = {
+                id: nodeId,
+                x: x,
+                y: y,
+                state: 'follower',
+                term: 0,
+                votes: 0,
+                logSize: 0,
+                commitIndex: 0,
+                lastActivity: Date.now(),
+                ...nodeData
+            };
+            
+            this.nodes.set(nodeId, newNode);
+            console.log('✅ Created new node:', newNode);
+        } else {
+            // Update existing node
+            const node = this.nodes.get(nodeId);
+            const oldState = node.state;
+            Object.assign(node, nodeData);
+            node.lastActivity = Date.now();
+            
+            console.log('✅ Updated existing node:', {
+                nodeId,
+                stateChange: `${oldState} → ${node.state}`,
+                term: node.term,
+                updatedNode: node
+            });
+        }
+        
+        console.log('🗺️ Current nodes in visualization:', Array.from(this.nodes.values()));
+        
+        // Force a render to see immediate changes
+        this.render(performance.now());
+    }
+    
+    /**
+     * Add message animation
+     * @param {Object} messageData - Message data
+     */
+    addMessage(messageData) {
+        console.log('💌 Visualization addMessage called:', {
+            messageData,
+            showMessages: this.showMessages,
+            showHeartbeats: this.showHeartbeats
+        });
+        
+        // Only throttle non-heartbeat messages
+        const now = Date.now();
+        if (messageData.messageType !== 'heartbeat') {
+            if (now - this.lastMessageTime < this.messageThrottleMs) {
+                console.log('🚫 Message throttled (too frequent)');
+                return;
+            }
+            
+            // Limit total number of concurrent non-heartbeat animations
+            if (this.messages.length > 20) {
+                console.log('🚫 Message limit reached (max 20 concurrent)');
+                return;
+            }
+        }
+        
+        if (!this.showMessages && messageData.messageType !== 'heartbeat') {
+            console.log('🚫 Message filtered out (showMessages=false)');
+            return;
+        }
+        if (!this.showHeartbeats && messageData.messageType === 'heartbeat') {
+            console.log('🚫 Heartbeat filtered out (showHeartbeats=false)');
+            return;
+        }
+        
+        const fromNode = this.nodes.get(messageData.from);
+        const toNode = this.nodes.get(messageData.to);
+        
+        console.log('🔍 Message nodes lookup:', {
+            from: messageData.from,
+            to: messageData.to,
+            fromNode: fromNode ? 'found' : 'NOT FOUND',
+            toNode: toNode ? 'found' : 'NOT FOUND',
+            allNodes: Array.from(this.nodes.keys())
+        });
+        
+        if (!fromNode || !toNode) {
+            console.warn('❌ Cannot add message - missing nodes');
+            return;
+        }
+        
+        // Simple message creation - no artificial delays or duration changes
+        const message = {
+            id: Date.now() + Math.random(),
+            from: messageData.from,
+            to: messageData.to,
+            type: messageData.messageType || 'message',
+            startX: fromNode.x,
+            startY: fromNode.y,
+            endX: toNode.x,
+            endY: toNode.y,
+            currentX: fromNode.x,
+            currentY: fromNode.y,
+            progress: 0,
+            startTime: Date.now(),
+            duration: 1000, // 1 second for all messages
+            color: this.getMessageColor(messageData.messageType)
+        };
+        
+        this.messages.push(message);
+        
+        // Only update throttle timestamp for non-heartbeat messages
+        if (messageData.messageType !== 'heartbeat') {
+            this.lastMessageTime = now;
+        }
+        
+        console.log('✅ Added message animation:', {
+            messageId: message.id,
+            from: message.from,
+            to: message.to,
+            type: message.type,
+            totalMessages: this.messages.length
+        });
+        
+        // Warning if too many messages accumulate
+        if (this.messages.length > 50) {
+            console.warn('⚠️ High message count detected:', this.messages.length);
+        }
+    }
+    
+    /**
+     * Add client message animation (from outside the cluster)
+     * @param {Object} messageData - Message data
+     */
+    addClientMessage(messageData) {
+        console.log('📨 Visualization addClientMessage called:', messageData);
+        
+        if (!this.showMessages) {
+            console.log('🚫 Client message filtered out (showMessages=false)');
+            return;
+        }
+        
+        const toNode = this.nodes.get(messageData.to);
+        
+        if (!toNode) {
+            console.warn('❌ Cannot add client message - target node not found:', messageData.to);
+            return;
+        }
+        
+        // Calculate client position (outside the cluster circle)
+        const clientX = this.centerX - 150; // To the left of the cluster
+        const clientY = this.centerY;
+        
+        const message = {
+            id: Date.now() + Math.random(),
+            from: 'client',
+            to: messageData.to,
+            type: 'client_command',
+            startX: clientX,
+            startY: clientY,
+            endX: toNode.x,
+            endY: toNode.y,
+            currentX: clientX,
+            currentY: clientY,
+            progress: 0,
+            startTime: Date.now(),
+            duration: 1500, // Slightly longer for client messages
+            color: '#ff6b6b', // Red color for client messages
+            command: messageData.command || 'command'
+        };
+        
+        this.messages.push(message);
+        
+        console.log('✅ Added client message animation:', {
+            messageId: message.id,
+            to: message.to,
+            command: message.command,
+            totalMessages: this.messages.length
+        });
+    }
+    
+    /**
+     * Get color for message type
+     * @param {string} messageType - Type of message
+     * @returns {string} Color hex code
+     */
+    getMessageColor(messageType) {
+        switch (messageType) {
+            case 'heartbeat':
+            case 'AppendEntriesRequest':
+                return this.colors.heartbeat;
+            case 'vote':
+            case 'RequestVoteRequest':
+                return this.colors.vote;
+            case 'client_command':
+                return this.colors.message;
+            default:
+                return this.colors.message;
+        }
+    }
+    
+    /**
+     * Start animation loop with dual-mode support
+     */
+    startAnimation() {
+        console.log('🎬 Starting dual-mode animation loop...');
+        
+        // Clear any existing animation
+        this.stopAnimation();
+        
+        // Start both requestAnimationFrame and fallback timer
+        this.startRequestAnimationFrame();
+        this.startFallbackTimer();
+        
+        console.log('✅ Dual animation system started');
+    }
+    
+    /**
+     * Start requestAnimationFrame loop
+     */
+    startRequestAnimationFrame() {
+        const animate = (timestamp) => {
+            try {
+                // Only log every 60 frames to reduce console spam
+                if (this.frameCount % 60 === 0) {
+                    console.log('🎬 RAF tick - frame:', this.frameCount, 'isAnimating:', this.isAnimating, 'useFallback:', this.useFallbackTimer);
+                }
+                if (this.isAnimating && !this.useFallbackTimer) {
+                    this.render(timestamp || performance.now());
+                    this.animationId = requestAnimationFrame(animate);
+                } else {
+                    console.log('⏸️ RAF stopped - isAnimating:', this.isAnimating, 'useFallback:', this.useFallbackTimer);
+                }
+            } catch (error) {
+                console.error('💥 RequestAnimationFrame crashed:', error);
+                this.switchToFallbackTimer();
+            }
+        };
+        
+        this.animationId = requestAnimationFrame(animate);
+        console.log('🎬 RequestAnimationFrame started:', this.animationId);
+    }
+    
+    /**
+     * Start fallback timer loop
+     */
+    startFallbackTimer() {
+        this.fallbackTimer = setInterval(() => {
+            try {
+                // Only log every 60 ticks to reduce console spam
+                if (this.frameCount % 60 === 0) {
+                    console.log('⏰ Timer tick - frame:', this.frameCount, 'isAnimating:', this.isAnimating, 'useFallback:', this.useFallbackTimer);
+                }
+                if (this.isAnimating && this.useFallbackTimer) {
+                    this.render(performance.now());
+                }
+            } catch (error) {
+                console.error('💥 Fallback timer crashed:', error);
+                // Don't call emergencyRecovery to prevent loops
+                console.error('Fallback timer disabled due to error');
+                clearInterval(this.fallbackTimer);
+                this.fallbackTimer = null;
+            }
+        }, 16); // ~60 FPS
+        
+        console.log('⏰ Fallback timer started:', this.fallbackTimer);
+    }
+    
+    /**
+     * Switch to fallback timer when requestAnimationFrame fails
+     */
+    switchToFallbackTimer() {
+        console.warn('🔄 Switching to fallback timer animation...');
+        this.useFallbackTimer = true;
+        
+        // Cancel requestAnimationFrame
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+            this.animationId = null;
+        }
+    }
+    
+    /**
+     * Stop all animation loops
+     */
+    stopAnimation() {
+        console.log('⏹️ Stopping all animation loops...');
+        
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+            this.animationId = null;
+        }
+        
+        if (this.fallbackTimer) {
+            clearInterval(this.fallbackTimer);
+            this.fallbackTimer = null;
+        }
+        
+        this.useFallbackTimer = false;
+    }
+    
+    /**
+     * Main render function
+     * @param {number} timestamp - Animation timestamp
+     */
+    render(timestamp) {
+        // FIRST THING: Update last render time to prevent recovery loops
+        this.lastRenderTime = Date.now();
+        
+        try {
+            // Only log every 60 frames to reduce console spam
+            if (this.frameCount % 60 === 0) {
+                console.log('🎨 Render called, frame:', this.frameCount, 'mode:', this.useFallbackTimer ? 'timer' : 'RAF', 'nodes:', this.nodes.size, 'messages:', this.messages.length);
+            }
+            
+            const renderStart = performance.now();
+            const deltaTime = timestamp - this.lastFrameTime;
+            this.lastFrameTime = timestamp;
+            
+            this.frameCount++;
+            
+            // Validate canvas context
+            if (!this.ctx || !this.canvas) {
+                console.error('❌ Canvas or context is null!');
+                return;
+            }
+            
+            // Clear canvas with error handling
+            try {
+                this.ctx.clearRect(0, 0, this.canvas.width / (window.devicePixelRatio || 1), 
+                                  this.canvas.height / (window.devicePixelRatio || 1));
+            } catch (error) {
+                console.error('❌ Failed to clear canvas:', error);
+                return;
+            }
+            
+            // Draw each component with individual error handling
+            try {
+                this.drawBackground();
+                if (this.frameCount % 60 === 0) {
+                    console.log('✅ Background drawn');
+                }
+            } catch (error) {
+                console.error('❌ Error drawing background:', error);
+            }
+            
+            try {
+                this.updateMessages(deltaTime);
+                this.drawMessages();
+            } catch (error) {
+                console.error('❌ Error with messages:', error);
+                // Clear messages if they're causing issues
+                this.messages = [];
+            }
+            
+            try {
+                this.drawConnections();
+            } catch (error) {
+                console.error('❌ Error drawing connections:', error);
+            }
+            
+            try {
+                this.drawNodes();
+                if (this.frameCount % 60 === 0) {
+                    console.log('✅ Nodes drawn, count:', this.nodes.size, 'nodes:', Array.from(this.nodes.keys()));
+                }
+            } catch (error) {
+                console.error('❌ Error drawing nodes:', error);
+            }
+            
+            try {
+                this.drawOverlay();
+            } catch (error) {
+                console.error('❌ Error drawing overlay:', error);
+            }
+            
+            // Performance monitoring
+            const renderEnd = performance.now();
+            const renderTime = renderEnd - renderStart;
+            this.renderTimes.push(renderTime);
+            
+            // Keep only last 60 frames for performance calculation
+            if (this.renderTimes.length > 60) {
+                this.renderTimes.shift();
+            }
+            
+            // Log performance every 5 seconds
+            if (renderEnd - this.lastPerformanceCheck > 5000) {
+                const avgRenderTime = this.renderTimes.reduce((a, b) => a + b, 0) / this.renderTimes.length;
+                const fps = 1000 / avgRenderTime;
+                
+                console.log('📊 Visualization Performance:', {
+                    frameCount: this.frameCount,
+                    avgRenderTime: avgRenderTime.toFixed(2) + 'ms',
+                    fps: fps.toFixed(1),
+                    activeMessages: this.messages.length,
+                    totalNodes: this.nodes.size
+                });
+                
+                // Warning if performance is degrading
+                if (avgRenderTime > 16.67) { // Below 60 FPS
+                    console.warn('⚠️ Visualization performance degraded - avg render time:', avgRenderTime.toFixed(2) + 'ms');
+                }
+                
+                this.lastPerformanceCheck = renderEnd;
+            }
+            
+            // Update last render time for emergency recovery
+            this.lastRenderTime = renderEnd;
+            
+        } catch (error) {
+            console.error('💥 Critical render error:', error);
+            console.error('Stack trace:', error.stack);
+            
+            // Clear problematic state
+            this.messages = [];
+            
+            // Try to reinitialize canvas
+            try {
+                this.setupCanvas();
+            } catch (canvasError) {
+                console.error('❌ Failed to reinitialize canvas:', canvasError);
+            }
+        }
+    }
+    
+    /**
+     * Setup emergency recovery system (DISABLED for debugging)
+     */
+    setupEmergencyRecovery() {
+        console.log('🚫 Emergency recovery system DISABLED for debugging');
+        // Disabled to prevent infinite recovery loops during debugging
+        // The recovery was triggering continuously even when render was working
+    }
+    
+    /**
+     * Emergency recovery - clean up and restart animation
+     */
+    emergencyRecovery() {
+        console.warn('🔧 Attempting emergency recovery...');
+        
+        // Stop all animation loops
+        this.stopAnimation();
+        
+        // Clear accumulated messages
+        const oldMessageCount = this.messages.length;
+        this.messages = [];
+        
+        // Reset performance monitoring
+        this.renderTimes = [];
+        this.frameCount = 0;
+        this.lastPerformanceCheck = Date.now();
+        this.lastRenderTime = Date.now();
+        
+        // Force garbage collection if available
+        if (window.gc) {
+            window.gc();
+        }
+        
+        // Reinitialize canvas
+        try {
+            this.setupCanvas();
+        } catch (error) {
+            console.error('❌ Failed to reinitialize canvas during recovery:', error);
+        }
+        
+        // If we were using fallback timer, force use it again
+        if (this.useFallbackTimer) {
+            console.log('🔄 Recovery: Continuing with fallback timer');
+        } else {
+            console.log('🔄 Recovery: Switching to fallback timer for reliability');
+            this.useFallbackTimer = true;
+        }
+        
+        // Always restart animation
+        this.isAnimating = true;
+        this.startAnimation();
+        
+        console.log('✅ Emergency recovery completed:', {
+            clearedMessages: oldMessageCount,
+            currentMessages: this.messages.length,
+            animationRestarted: this.isAnimating,
+            useFallbackTimer: this.useFallbackTimer,
+            animationId: this.animationId,
+            fallbackTimer: this.fallbackTimer
+        });
+    }
+    
+    /**
+     * Test basic canvas functionality
+     */
+    testBasicCanvas() {
+        console.log('🧪 Testing basic canvas functionality...');
+        
+        if (!this.canvas) {
+            console.error('❌ Canvas element not found!');
+            return false;
+        }
+        
+        if (!this.ctx) {
+            console.error('❌ Canvas context not found!');
+            return false;
+        }
+        
+        try {
+            // Clear canvas first
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            
+            // Test basic canvas operations
+            this.ctx.fillStyle = 'red';
+            this.ctx.fillRect(10, 10, 50, 50);
+            
+            this.ctx.fillStyle = 'blue';
+            this.ctx.fillRect(70, 10, 50, 50);
+            
+            this.ctx.fillStyle = 'green';
+            this.ctx.beginPath();
+            this.ctx.arc(150, 35, 25, 0, 2 * Math.PI);
+            this.ctx.fill();
+            
+            // Add text
+            this.ctx.fillStyle = 'black';
+            this.ctx.font = '16px Arial';
+            this.ctx.fillText('Canvas Test - Basic Drawing Works!', 10, 100);
+            
+            console.log('✅ Basic canvas test successful - you should see colored shapes and text');
+            return true;
+            
+        } catch (error) {
+            console.error('❌ Canvas test failed:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * Draw background grid and styling
+     */
+    drawBackground() {
+        const width = this.canvas.width / (window.devicePixelRatio || 1);
+        const height = this.canvas.height / (window.devicePixelRatio || 1);
+        
+        // Fill background
+        this.ctx.fillStyle = this.colors.background;
+        this.ctx.fillRect(0, 0, width, height);
+        
+        // Draw subtle grid
+        this.ctx.strokeStyle = this.colors.grid;
+        this.ctx.lineWidth = 0.5;
+        this.ctx.setLineDash([2, 4]);
+        
+        const gridSize = 50;
+        for (let x = 0; x < width; x += gridSize) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x, height);
+            this.ctx.stroke();
+        }
+        
+        for (let y = 0; y < height; y += gridSize) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, y);
+            this.ctx.lineTo(width, y);
+            this.ctx.stroke();
+        }
+        
+        this.ctx.setLineDash([]);
+    }
+    
+    /**
+     * Draw connections between nodes
+     */
+    drawConnections() {
+        this.ctx.strokeStyle = '#ddd';
+        this.ctx.lineWidth = 1;
+        this.ctx.setLineDash([5, 5]);
+        
+        const nodeArray = Array.from(this.nodes.values());
+        for (let i = 0; i < nodeArray.length; i++) {
+            for (let j = i + 1; j < nodeArray.length; j++) {
+                const node1 = nodeArray[i];
+                const node2 = nodeArray[j];
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(node1.x, node1.y);
+                this.ctx.lineTo(node2.x, node2.y);
+                this.ctx.stroke();
+            }
+        }
+        
+        this.ctx.setLineDash([]);
+    }
+    
+    /**
+     * Update message animations
+     * @param {number} deltaTime - Time since last frame
+     */
+    updateMessages(deltaTime) {
+        this.messages = this.messages.filter(message => {
+            const elapsed = Date.now() - message.startTime;
+            message.progress = Math.min(elapsed / message.duration, 1);
+            
+            // Simple linear interpolation - no artificial easing
+            message.currentX = message.startX + (message.endX - message.startX) * message.progress;
+            message.currentY = message.startY + (message.endY - message.startY) * message.progress;
+            
+            // Remove completed messages
+            return message.progress < 1;
+        });
+    }
+    
+    /**
+     * Draw message animations
+     */
+    drawMessages() {
+        this.messages.forEach(message => {
+            const alpha = 1 - message.progress * 0.5; // Fade out as it travels
+            const size = 8 + (1 - message.progress) * 4; // Shrink as it travels
+            
+            this.ctx.save();
+            this.ctx.globalAlpha = alpha;
+            this.ctx.fillStyle = message.color;
+            
+            this.ctx.beginPath();
+            this.ctx.arc(message.currentX, message.currentY, size, 0, 2 * Math.PI);
+            this.ctx.fill();
+            
+            // Add glow effect
+            this.ctx.shadowColor = message.color;
+            this.ctx.shadowBlur = 10;
+            this.ctx.beginPath();
+            this.ctx.arc(message.currentX, message.currentY, size * 0.6, 0, 2 * Math.PI);
+            this.ctx.fill();
+            
+            this.ctx.restore();
+        });
+    }
+    
+    /**
+     * Draw all nodes
+     */
+    drawNodes() {
+        this.nodes.forEach(node => {
+            this.drawNode(node);
+        });
+    }
+    
+    /**
+     * Draw a single node
+     * @param {Object} node - Node data
+     */
+    drawNode(node) {
+        const color = this.colors[node.state] || this.colors.follower;
+        const isActive = Date.now() - node.lastActivity < 2000; // Active in last 2 seconds
+        
+        // Debug: Log node position every 60 frames
+        if (this.frameCount % 60 === 0) {
+            const canvasInfo = {
+                canvasWidth: this.canvas.width,
+                canvasHeight: this.canvas.height,
+                clientWidth: this.canvas.clientWidth,
+                clientHeight: this.canvas.clientHeight,
+                centerX: this.centerX,
+                centerY: this.centerY
+            };
+            console.log(`🎯 Drawing node ${node.id}:`, {
+                position: `(${node.x}, ${node.y})`,
+                state: node.state,
+                color: color,
+                canvas: canvasInfo
+            });
+        }
+        
+        this.ctx.save();
+        
+        // Draw node shadow
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+        this.ctx.shadowBlur = 10;
+        this.ctx.shadowOffsetX = 2;
+        this.ctx.shadowOffsetY = 2;
+        
+        // Draw node circle
+        this.ctx.fillStyle = color;
+        this.ctx.strokeStyle = isActive ? '#333' : '#999';
+        this.ctx.lineWidth = isActive ? 3 : 2;
+        
+        this.ctx.beginPath();
+        this.ctx.arc(node.x, node.y, this.nodeRadius, 0, 2 * Math.PI);
+        this.ctx.fill();
+        this.ctx.stroke();
+        
+        this.ctx.restore();
+        
+        // Draw node label
+        if (this.showNodeLabels) {
+            this.ctx.fillStyle = this.colors.text;
+            this.ctx.font = 'bold 14px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(`Node ${node.id}`, node.x, node.y - 5);
+            
+            // Draw state
+            this.ctx.font = '10px Arial';
+            this.ctx.fillText(node.state.toUpperCase(), node.x, node.y + 8);
+            
+            // Draw term
+            this.ctx.font = '9px Arial';
+            this.ctx.fillStyle = '#666';
+            this.ctx.fillText(`T:${node.term}`, node.x, node.y + 20);
+        }
+        
+        // Draw activity indicator
+        if (isActive) {
+            const pulseRadius = this.nodeRadius + 10 + Math.sin(Date.now() / 200) * 5;
+            this.ctx.strokeStyle = color;
+            this.ctx.lineWidth = 2;
+            this.ctx.globalAlpha = 0.5;
+            this.ctx.setLineDash([3, 3]);
+            
+            this.ctx.beginPath();
+            this.ctx.arc(node.x, node.y, pulseRadius, 0, 2 * Math.PI);
+            this.ctx.stroke();
+            
+            this.ctx.setLineDash([]);
+            this.ctx.globalAlpha = 1;
+        }
+    }
+    
+    /**
+     * Draw UI overlay
+     */
+    drawOverlay() {
+        // Draw legend
+        this.drawLegend();
+        
+        // Draw performance info
+        this.drawPerformanceInfo();
+    }
+    
+    /**
+     * Draw legend
+     */
+    drawLegend() {
+        const startX = 20;
+        const startY = 20;
+        const itemHeight = 25;
+        
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.fillRect(startX - 10, startY - 10, 120, 100);
+        
+        this.ctx.strokeStyle = '#ddd';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(startX - 10, startY - 10, 120, 100);
+        
+        const legendItems = [
+            { color: this.colors.leader, label: 'Leader' },
+            { color: this.colors.candidate, label: 'Candidate' },
+            { color: this.colors.follower, label: 'Follower' }
+        ];
+        
+        legendItems.forEach((item, index) => {
+            const y = startY + index * itemHeight;
+            
+            // Draw color circle
+            this.ctx.fillStyle = item.color;
+            this.ctx.beginPath();
+            this.ctx.arc(startX + 8, y + 8, 6, 0, 2 * Math.PI);
+            this.ctx.fill();
+            
+            // Draw label
+            this.ctx.fillStyle = this.colors.text;
+            this.ctx.font = '12px Arial';
+            this.ctx.textAlign = 'left';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(item.label, startX + 20, y + 8);
+        });
+    }
+    
+    /**
+     * Draw performance information
+     */
+    drawPerformanceInfo() {
+        const info = [
+            `Nodes: ${this.nodes.size}`,
+            `Messages: ${this.messages.length}`,
+            `FPS: ${Math.round(1000 / (Date.now() - this.lastFrameTime)) || 0}`
+        ];
+        
+        const startX = this.canvas.width / (window.devicePixelRatio || 1) - 150;
+        const startY = 20;
+        
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.fillRect(startX - 10, startY - 10, 140, 80);
+        
+        this.ctx.strokeStyle = '#ddd';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(startX - 10, startY - 10, 140, 80);
+        
+        this.ctx.fillStyle = this.colors.text;
+        this.ctx.font = '11px monospace';
+        this.ctx.textAlign = 'left';
+        
+        info.forEach((text, index) => {
+            this.ctx.fillText(text, startX, startY + index * 20);
+        });
+    }
+    
+    /**
+     * Handle canvas clicks
+     * @param {MouseEvent} event - Click event
+     */
+    handleCanvasClick(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        
+        // Check if click is on a node
+        this.nodes.forEach(node => {
+            const distance = Math.sqrt((x - node.x) ** 2 + (y - node.y) ** 2);
+            if (distance <= this.nodeRadius) {
+                console.log('Clicked on node:', node.id);
+                this.emit('nodeClick', node);
+            }
+        });
+    }
+    
+    /**
+     * Set visualization settings
+     * @param {Object} settings - Settings object
+     */
+    setSettings(settings) {
+        if (settings.showHeartbeats !== undefined) {
+            this.showHeartbeats = settings.showHeartbeats;
+        }
+        if (settings.showMessages !== undefined) {
+            this.showMessages = settings.showMessages;
+        }
+        if (settings.showNodeLabels !== undefined) {
+            this.showNodeLabels = settings.showNodeLabels;
+        }
+    }
+    
+    /**
+     * Clear all messages and animations
+     */
+    clear() {
+        this.messages = [];
+        this.animations = [];
+    }
+    
+    /**
+     * Pause/resume animation
+     * @param {boolean} paused - Whether to pause
+     */
+    setPaused(paused) {
+        this.isAnimating = !paused;
+        if (!paused) {
+            this.startAnimation();
+        }
+    }
+    
+    /**
+     * Simple event system
+     */
+    emit(eventType, data) {
+        // Placeholder for event emission
+        console.log('Visualization event:', eventType, data);
+    }
+    
+    /**
+     * Get current state
+     */
+    getState() {
+        return {
+            nodeCount: this.nodes.size,
+            messageCount: this.messages.length,
+            isAnimating: this.isAnimating,
+            settings: {
+                showHeartbeats: this.showHeartbeats,
+                showMessages: this.showMessages,
+                showNodeLabels: this.showNodeLabels
+            }
+        };
+    }
+}
+
+// Export for use in other modules
+window.RaftVisualization = RaftVisualization;

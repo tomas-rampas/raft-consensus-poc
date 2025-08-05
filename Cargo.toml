@@ -1,0 +1,16 @@
+[package]
+name = "raft-poc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rand = "0.8"
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio-tungstenite = "0.20"
+warp = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+futures-util = "0.3"
