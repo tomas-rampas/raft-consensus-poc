@@ -153,12 +153,11 @@ pub async fn run_node(
                 if node.is_failed() {
                     trace!(
                         node_id = node.id,
-                        "🚫 Node is in failure state, ignoring message: {:?}",
-                        message
+                        "🚫 Node is in failure state, ignoring message: {:?}", message
                     );
                     continue; // Ignore all messages during failure
                 }
-                
+
                 handle_incoming_message(&mut node, message, &cluster_channels, &event_broadcaster)
                     .await;
             }
@@ -183,8 +182,20 @@ async fn handle_incoming_message(
 ) {
     match message {
         RpcMessage::AppendEntriesRequest { from, request, .. } => {
+            debug!(
+                node_id = node.id,
+                "📥 RECEIVED: AppendEntries from leader {} with {} entries (term: {})",
+                from, request.entries.len(), request.term
+            );
+            
             let response = node.handle_append_entries(&request);
-            let response_message = RpcMessage::append_entries_response(node.id, from, response);
+            let response_message = RpcMessage::append_entries_response(node.id, from, response.clone());
+
+            debug!(
+                node_id = node.id,
+                "📤 RESPONDING: AppendEntries response to leader {} → {}",
+                from, if response.success { "SUCCESS (ACK)" } else { "FAILED (NACK)" }
+            );
 
             if let Err(e) = cluster_channels.send_to_node(from, response_message) {
                 eprintln!("Failed to send AppendEntries response: {e:?}");
@@ -192,7 +203,43 @@ async fn handle_incoming_message(
         }
         RpcMessage::AppendEntriesResponse { from, response, .. } => {
             if matches!(node.state, NodeState::Leader) {
+                // Before processing, capture current state for comparison
+                let old_log_length = node.last_log_index();
+
                 node.handle_append_entries_response(from, &response);
+
+                // Check if any proposals were committed during this response processing
+                let new_log_length = node.last_log_index();
+                if new_log_length > old_log_length {
+                    info!(
+                        node_id = node.id,
+                        "🎉 PROPOSALS COMMITTED: {} new entries added to committed log (index {} → {})",
+                        new_log_length - old_log_length,
+                        old_log_length + 1,
+                        new_log_length
+                    );
+                    
+                    // Emit LogEntryAdded events for newly committed entries
+                    for log_index in (old_log_length + 1)..=new_log_length {
+                        if let Some(log_entry) =
+                            node.persistent_state.log.get((log_index - 1) as usize)
+                        {
+                            let log_added_event = RaftEvent::log_entry_added(
+                                node.id,
+                                log_entry.term,
+                                log_index,
+                                log_entry.command.clone(),
+                            );
+                            let _ = event_broadcaster.emit(log_added_event);
+                            info!(
+                                node_id = node.id,
+                                "📡 EVENT EMITTED: LogEntryAdded for committed command '{}' at index {}",
+                                log_entry.command,
+                                log_index
+                            );
+                        }
+                    }
+                }
             }
         }
         RpcMessage::RequestVoteRequest { from, request, .. } => {
@@ -239,24 +286,23 @@ async fn handle_incoming_message(
             if command == "SIMULATE_LEADER_FAILURE" {
                 info!(
                     node_id = node.id,
-                    "👑 Received leader failure simulation command, state: {:?}",
-                    node.state
+                    "👑 Received leader failure simulation command, state: {:?}", node.state
                 );
-                
+
                 // Only the current leader should simulate failure
                 if matches!(node.state, NodeState::Leader) {
                     warn!(
                         node_id = node.id,
                         "💥 Simulating leader failure - node will be unresponsive for 2 seconds"
                     );
-                    
+
                     // Simulate failure for 2 seconds (node becomes unresponsive)
                     node.simulate_failure(2000); // 2 seconds
-                    
+
                     // Step down from leadership by becoming a follower
                     let old_state = node.state.clone();
                     node.state = NodeState::Follower;
-                    
+
                     // Emit state change event
                     let state_change_event = RaftEvent::state_change(
                         node.id,
@@ -266,21 +312,22 @@ async fn handle_incoming_message(
                         "Simulated leader failure - node unresponsive".to_string(),
                     );
                     let _ = event_broadcaster.emit(state_change_event);
-                    
+
                     info!(
                         node_id = node.id,
                         "🔄 Former leader is now unresponsive, other nodes will timeout and elect new leader"
                     );
                 }
-                
+
                 return; // Don't process as normal command
             }
-            
-            if let Some(log_index) = node.client_submit(command.clone()) {
-                // Command accepted by leader, will be replicated
+
+            if let Some(proposed_index) = node.client_submit(command.clone()) {
+                // Command accepted by leader as a pending proposal
                 info!(
                     node_id = node.id,
-                    "✅ Command '{}' accepted at log index {}", command, log_index
+                    "🔄 CONSENSUS FLOW START: Client command '{}' accepted as pending proposal at index {} (term {})",
+                    command, proposed_index, node.persistent_state.current_term
                 );
 
                 // Emit client command received event
@@ -292,17 +339,29 @@ async fn handle_incoming_message(
                 );
                 let _ = event_broadcaster.emit(command_event);
 
-                // Emit log entry added event
-                let log_entry_event = RaftEvent::log_entry_added(
+                // Emit log entry proposed event (not yet committed)
+                let required_acks = (node.cluster_size / 2) + 1;
+                let proposal_event = RaftEvent::log_entry_proposed(
                     node.id,
                     node.persistent_state.current_term,
-                    log_index,
+                    proposed_index,
                     command,
+                    required_acks,
                 );
-                let _ = event_broadcaster.emit(log_entry_event);
+                let _ = event_broadcaster.emit(proposal_event);
+                debug!(
+                    node_id = node.id,
+                    "📡 EVENT EMITTED: LogEntryProposed for proposal {} (awaiting consensus)",
+                    proposed_index
+                );
 
-                // Send AppendEntries to replicate the new log entry
+                // Send AppendEntries to replicate the proposed entry
                 if matches!(node.state, NodeState::Leader) {
+                    info!(
+                        node_id = node.id,
+                        "📤 STEP 2/4 - REPLICATING: Broadcasting AppendEntries with proposal {} to {} followers",
+                        proposed_index, node.cluster_size - 1
+                    );
                     send_append_entries_to_all_followers(node, cluster_channels, event_broadcaster)
                         .await;
                 }
@@ -338,7 +397,7 @@ async fn handle_timeout(
         // Node is still in failure state, don't do anything
         return;
     }
-    
+
     // If node was previously failed but is no longer, it may need to reset its election timeout
     if node.simulated_failure_until.is_some() {
         node.recover_from_failure();
@@ -348,7 +407,7 @@ async fn handle_timeout(
             "🔄 Node recovered from simulated failure, resetting election timer"
         );
     }
-    
+
     match node.state {
         NodeState::Follower | NodeState::Candidate => {
             if node.is_election_timeout() {
@@ -396,7 +455,7 @@ async fn handle_timeout(
                 );
                 return; // Don't send heartbeats during failure
             }
-            
+
             // Send heartbeats to maintain leadership
             if node.should_send_heartbeat() {
                 trace!(
@@ -464,14 +523,28 @@ async fn send_append_entries_to_all_followers(
         return;
     }
 
+    let leader_state = node.leader_state.as_ref().unwrap();
+    let pending_count = leader_state.pending_proposals.len();
+    
     // Send tailored AppendEntries to each follower
     for follower_id in 0..cluster_channels.size() {
         if follower_id != node.id {
             if let Some(append_entries) = node.create_append_entries_for_follower(follower_id) {
+                debug!(
+                    node_id = node.id,
+                    "📤 → Follower {}: Sending AppendEntries with {} entries ({} committed + {} pending)",
+                    follower_id, append_entries.entries.len(), node.last_log_index(), pending_count
+                );
+                
                 let message =
                     RpcMessage::append_entries_request(node.id, follower_id, append_entries);
                 if let Err(e) = cluster_channels.send_to_node(follower_id, message) {
                     eprintln!("Failed to send AppendEntries to node {follower_id}: {e:?}");
+                } else {
+                    trace!(
+                        node_id = node.id,
+                        "✅ AppendEntries sent to follower {} successfully", follower_id
+                    );
                 }
             }
         }

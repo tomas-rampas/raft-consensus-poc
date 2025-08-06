@@ -271,13 +271,26 @@ async fn handle_client_command(
                 // Client wants to submit a command to the cluster
                 if let Some(command_text) = command.get("command").and_then(|v| v.as_str()) {
                     if let Some(cluster_channels) = cluster_channels {
-                        // Try to submit to all nodes (leader will accept)
+                        // Submit to node 0 first (it will either handle it as leader or be forwarded)
+                        // This prevents duplicate rejection events from all nodes
                         let mut submitted = false;
-                        for node_id in 0..cluster_channels.cluster_size {
-                            let message =
-                                RpcMessage::client_command(999, node_id, command_text.to_string());
-                            if cluster_channels.send_to_node(node_id, message).is_ok() {
-                                submitted = true;
+                        let message = RpcMessage::client_command(999, 0, command_text.to_string());
+                        if cluster_channels.send_to_node(0, message).is_ok() {
+                            submitted = true;
+                        }
+
+                        // If node 0 fails to receive, try other nodes as fallback
+                        if !submitted {
+                            for node_id in 1..cluster_channels.cluster_size {
+                                let message = RpcMessage::client_command(
+                                    999,
+                                    node_id,
+                                    command_text.to_string(),
+                                );
+                                if cluster_channels.send_to_node(node_id, message).is_ok() {
+                                    submitted = true;
+                                    break; // Only try until one succeeds
+                                }
                             }
                         }
 
@@ -323,20 +336,20 @@ async fn handle_client_command(
             "simulate_leader_failure" => {
                 // Client wants to simulate a leader failure for demonstration
                 info!("👑 WebSocket client requested leader failure simulation");
-                
+
                 // For now, we'll broadcast a special message to trigger leadership change
                 // The actual implementation would temporarily disable the current leader
                 if let Some(cluster_channels) = cluster_channels {
                     // Send a special failure simulation message to all nodes
                     for node_id in 0..cluster_channels.cluster_size {
                         let message = RpcMessage::client_command(
-                            999, 
-                            node_id, 
-                            "SIMULATE_LEADER_FAILURE".to_string()
+                            999,
+                            node_id,
+                            "SIMULATE_LEADER_FAILURE".to_string(),
                         );
                         let _ = cluster_channels.send_to_node(node_id, message);
                     }
-                    
+
                     let response = serde_json::json!({
                         "type": "leader_failure_simulated",
                         "success": true,
@@ -347,7 +360,7 @@ async fn handle_client_command(
                     info!("✅ Leader failure simulation message sent to cluster");
                 } else {
                     let response = serde_json::json!({
-                        "type": "leader_failure_simulated", 
+                        "type": "leader_failure_simulated",
                         "success": false,
                         "error": "Cluster channels not available",
                         "timestamp": chrono::Utc::now().timestamp_millis()

@@ -227,7 +227,8 @@ impl Node {
     }
 
     /// Handles client command submission (only leaders can accept commands)
-    /// Returns the log index where the command was stored, or None if not leader
+    /// Creates a pending proposal that requires majority consensus before committing
+    /// Returns the proposed log index where the command would be placed, or None if not leader
     pub fn client_submit(&mut self, command: String) -> Option<u64> {
         if !matches!(self.state, NodeState::Leader) {
             debug!(
@@ -237,21 +238,83 @@ impl Node {
             return None;
         }
 
-        // Create new log entry
-        let new_entry =
-            crate::raft::core::LogEntry::new(self.persistent_state.current_term, command.clone());
-        self.persistent_state.log.push(new_entry);
-        let log_index = self.last_log_index();
+        let proposed_index = self.last_log_index() + 1;
+        let current_term = self.persistent_state.current_term;
+        let node_id = self.id;
 
-        info!(
-            node_id = self.id,
-            "📝 Added command '{}' to log at index {} (term {})",
-            command,
-            log_index,
-            self.persistent_state.current_term
+        // Create a pending proposal instead of immediately adding to log
+        let proposal = crate::raft::core::PendingProposal::new(
+            proposed_index,
+            current_term,
+            command.clone(),
+            node_id,
         );
 
-        Some(log_index)
+        let leader_state = self.leader_state.as_mut().unwrap();
+        leader_state
+            .pending_proposals
+            .insert(proposed_index, proposal);
+
+        info!(
+            node_id = node_id,
+            "📋 STEP 1/4 - PROPOSAL CREATED: Command '{}' → pending proposal at index {} (term {}) | Need {}/{} acks for consensus",
+            command,
+            proposed_index,
+            current_term,
+            (self.cluster_size / 2) + 1,
+            self.cluster_size
+        );
+
+        Some(proposed_index)
+    }
+
+    /// Commits a pending proposal to the log once consensus is achieved
+    /// Returns true if the proposal was successfully committed
+    pub fn commit_proposal(&mut self, proposed_index: u64) -> bool {
+        if !matches!(self.state, NodeState::Leader) {
+            return false;
+        }
+
+        let leader_state = self.leader_state.as_mut().unwrap();
+
+        if let Some(proposal) = leader_state.pending_proposals.remove(&proposed_index) {
+            info!(
+                node_id = self.id,
+                "🎯 STEP 4/4 - COMMITTING: Proposal {} achieved consensus → moving to committed log",
+                proposed_index
+            );
+            
+            // Add the proposal to the actual log
+            let log_entry =
+                crate::raft::core::LogEntry::new(proposal.term, proposal.command.clone());
+            self.persistent_state.log.push(log_entry);
+
+            info!(
+                node_id = self.id,
+                "✅ CONSENSUS FLOW COMPLETE: Command '{}' committed to log at index {} (term {}) | Acknowledged by: {:?}",
+                proposal.command,
+                proposed_index,
+                proposal.term,
+                proposal.acknowledgments
+            );
+
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Gets all pending proposals with their current status
+    pub fn get_pending_proposals(&self) -> Vec<(u64, &crate::raft::core::PendingProposal)> {
+        if let Some(leader_state) = &self.leader_state {
+            leader_state
+                .pending_proposals
+                .iter()
+                .map(|(index, proposal)| (*index, proposal))
+                .collect()
+        } else {
+            Vec::new()
+        }
     }
 
     /// Creates heartbeat AppendEntries requests for all followers
@@ -279,6 +342,7 @@ impl Node {
     }
 
     /// Creates an AppendEntries request for a specific follower with appropriate log entries
+    /// Now includes pending proposals that need to be replicated
     pub fn create_append_entries_for_follower(
         &self,
         follower_id: NodeId,
@@ -298,12 +362,22 @@ impl Node {
             self.get_log_term(prev_log_index).unwrap_or(0)
         };
 
-        // Entries to send (from next_index onwards)
-        let entries = if next_index <= self.last_log_index() {
+        // Entries to send (committed log entries from next_index onwards)
+        let mut entries = if next_index <= self.last_log_index() {
             self.persistent_state.log[(next_index - 1) as usize..].to_vec()
         } else {
             Vec::new()
         };
+
+        // Add pending proposals as tentative entries for replication
+        let start_proposed_index = self.last_log_index() + 1;
+        for (proposed_index, proposal) in &leader_state.pending_proposals {
+            if *proposed_index >= start_proposed_index {
+                let tentative_entry =
+                    crate::raft::core::LogEntry::new(proposal.term, proposal.command.clone());
+                entries.push(tentative_entry);
+            }
+        }
 
         Some(AppendEntriesRequest::with_entries(
             self.persistent_state.current_term,
@@ -344,19 +418,49 @@ impl Node {
             let last_log_index = self.last_log_index();
             let leader_state = self.leader_state.as_mut().unwrap();
             let next_index = leader_state.next_index[follower_id];
-            let entries_sent = if next_index <= last_log_index {
+
+            // Calculate how many entries were sent (including both committed log and pending proposals)
+            let committed_entries_sent = if next_index <= last_log_index {
                 (last_log_index - next_index + 1) as usize
             } else {
                 0
             };
 
-            if entries_sent > 0 {
-                let new_match_index = next_index + entries_sent as u64 - 1;
+            if committed_entries_sent > 0 {
+                let new_match_index = next_index + committed_entries_sent as u64 - 1;
                 leader_state.match_index[follower_id] = new_match_index;
                 leader_state.next_index[follower_id] = new_match_index + 1;
             }
 
-            // Try to advance commit index
+            // Track acknowledgments for pending proposals
+            // If we sent pending proposals beyond the committed log, track their acknowledgments
+            let start_proposed_index = last_log_index + 1;
+            let proposals_to_ack: Vec<u64> = leader_state
+                .pending_proposals
+                .keys()
+                .filter(|&&proposed_index| proposed_index >= start_proposed_index)
+                .cloned()
+                .collect();
+
+            for proposed_index in proposals_to_ack {
+                if let Some(proposal) = leader_state.pending_proposals.get_mut(&proposed_index) {
+                    proposal.add_acknowledgment(follower_id);
+                    let acks_received = proposal.acknowledgments.len();
+                    let acks_needed = (self.cluster_size / 2) + 1;
+                    
+                    info!(
+                        node_id = self.id,
+                        "📝 STEP 3/4 - ACK RECEIVED: Follower {} acknowledged proposal {} → {}/{} acks ({})",
+                        follower_id,
+                        proposed_index,
+                        acks_received,
+                        acks_needed,
+                        if acks_received >= acks_needed { "CONSENSUS ACHIEVED!" } else { "waiting for more..." }
+                    );
+                }
+            }
+
+            // Try to advance commit index and commit ready proposals
             self.try_advance_commit_index();
         } else {
             // Failure - decrement next_index and retry
@@ -367,11 +471,40 @@ impl Node {
     }
 
     /// Attempts to advance the commit index based on majority replication
-    pub fn try_advance_commit_index(&mut self) {
+    /// Also checks pending proposals for consensus and commits them if ready
+    pub fn try_advance_commit_index(&mut self) -> Vec<u64> {
         if !matches!(self.state, NodeState::Leader) {
-            return;
+            return Vec::new();
         }
 
+        let mut committed_proposals = Vec::new();
+
+        // First, check pending proposals for consensus
+        let proposals_ready_for_commit: Vec<(u64, usize)> = {
+            let leader_state = self.leader_state.as_ref().unwrap();
+            leader_state
+                .pending_proposals
+                .iter()
+                .filter(|(_, proposal)| proposal.has_majority(self.cluster_size))
+                .map(|(index, proposal)| (*index, proposal.acknowledgments.len()))
+                .collect()
+        };
+
+        for (proposed_index, acks_count) in proposals_ready_for_commit {
+            info!(
+                node_id = self.id,
+                "🎯 CONSENSUS DETECTED: Proposal {} has {}/{} acks - ready to commit!",
+                proposed_index,
+                acks_count,
+                (self.cluster_size / 2) + 1
+            );
+            
+            if self.commit_proposal(proposed_index) {
+                committed_proposals.push(proposed_index);
+            }
+        }
+
+        // Then, advance commit index for existing log entries
         let leader_state = self.leader_state.as_ref().unwrap();
         let majority = (self.cluster_size / 2) + 1;
 
@@ -395,6 +528,8 @@ impl Node {
                 }
             }
         }
+
+        committed_proposals
     }
 
     /// Creates RequestVote requests for all other nodes in the cluster

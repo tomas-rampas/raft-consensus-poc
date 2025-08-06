@@ -29,6 +29,34 @@ mod core_tests {
         let state = LeaderVolatileState::new(3, 5);
         assert_eq!(state.next_index, vec![6, 6, 6]);
         assert_eq!(state.match_index, vec![0, 0, 0]);
+        assert!(state.pending_proposals.is_empty());
+    }
+
+    #[test]
+    fn test_pending_proposal_creation() {
+        let proposal = PendingProposal::new(1, 2, "test command".to_string(), 0);
+        assert_eq!(proposal.proposed_index, 1);
+        assert_eq!(proposal.term, 2);
+        assert_eq!(proposal.command, "test command");
+        assert_eq!(proposal.acknowledgments, vec![0]); // Leader acknowledges by default
+        assert!(!proposal.has_majority(5)); // Should need 3 acks for majority in cluster of 5
+    }
+
+    #[test]
+    fn test_pending_proposal_acknowledgments() {
+        let mut proposal = PendingProposal::new(1, 2, "test command".to_string(), 0);
+
+        // Add acknowledgments
+        proposal.add_acknowledgment(1);
+        proposal.add_acknowledgment(2);
+        assert_eq!(proposal.acknowledgments.len(), 3);
+
+        // Check majority
+        assert!(proposal.has_majority(5)); // 3 out of 5 is majority
+
+        // Adding same acknowledgment again should not duplicate
+        proposal.add_acknowledgment(1);
+        assert_eq!(proposal.acknowledgments.len(), 3);
     }
 
     #[test]
@@ -123,6 +151,62 @@ mod core_tests {
         node.last_heartbeat_time =
             std::time::Instant::now() - std::time::Duration::from_millis(100);
         assert!(node.should_send_heartbeat());
+    }
+
+    #[test]
+    fn test_client_submit_as_follower() {
+        let mut node = Node::new(0, 3);
+        assert_eq!(node.state, NodeState::Follower);
+
+        // Follower should reject client commands
+        let result = node.client_submit("test command".to_string());
+        assert!(result.is_none());
+
+        // Log should still be empty
+        assert_eq!(node.last_log_index(), 0);
+    }
+
+    #[test]
+    fn test_client_submit_as_leader() {
+        let mut node = Node::new(0, 3);
+        node.state = NodeState::Leader;
+        node.leader_state = Some(LeaderVolatileState::new(3, 0));
+
+        // Leader should create pending proposal
+        let result = node.client_submit("test command".to_string());
+        assert_eq!(result, Some(1)); // Should return proposed index 1
+
+        // Log should still be empty (proposal not yet committed)
+        assert_eq!(node.last_log_index(), 0);
+
+        // Should have pending proposal
+        let leader_state = node.leader_state.as_ref().unwrap();
+        assert_eq!(leader_state.pending_proposals.len(), 1);
+        assert!(leader_state.pending_proposals.contains_key(&1));
+    }
+
+    #[test]
+    fn test_commit_proposal() {
+        let mut node = Node::new(0, 3);
+        node.state = NodeState::Leader;
+        node.leader_state = Some(LeaderVolatileState::new(3, 0));
+        node.persistent_state.current_term = 1;
+
+        // Create a proposal first
+        let proposed_index = node.client_submit("test command".to_string()).unwrap();
+
+        // Commit the proposal
+        let committed = node.commit_proposal(proposed_index);
+        assert!(committed);
+
+        // Now log should have the entry
+        assert_eq!(node.last_log_index(), 1);
+        assert_eq!(node.persistent_state.log[0].command, "test command");
+        assert_eq!(node.persistent_state.log[0].term, 1);
+
+        // Pending proposal should be removed
+        let leader_state = node.leader_state.as_ref().unwrap();
+        assert!(leader_state.pending_proposals.is_empty());
     }
 }
 
@@ -264,10 +348,21 @@ mod algorithm_tests {
         // Follower can't accept commands
         assert_eq!(node.client_submit("cmd1".to_string()), None);
 
-        // Leader can accept commands
+        // Leader can accept commands as proposals (not immediately in log)
         node.become_leader();
-        let log_index = node.client_submit("cmd1".to_string());
-        assert_eq!(log_index, Some(1));
+        let proposed_index = node.client_submit("cmd1".to_string());
+        assert_eq!(proposed_index, Some(1));
+
+        // With new consensus implementation, log should be empty until proposal is committed
+        assert_eq!(node.persistent_state.log.len(), 0);
+
+        // Should have pending proposal
+        let leader_state = node.leader_state.as_ref().unwrap();
+        assert_eq!(leader_state.pending_proposals.len(), 1);
+        assert!(leader_state.pending_proposals.contains_key(&1));
+
+        // Manually commit the proposal to test commit behavior
+        node.commit_proposal(1);
         assert_eq!(node.persistent_state.log.len(), 1);
         assert_eq!(node.persistent_state.log[0].command, "cmd1");
         assert_eq!(

@@ -387,7 +387,7 @@ input[type="text"]:focus {
     border-left: 3px solid #667eea;
     background: #f8f9fa;
     border-radius: 0 6px 6px 0;
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .timeline-event.leader-election {

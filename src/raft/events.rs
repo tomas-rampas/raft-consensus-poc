@@ -96,6 +96,13 @@ pub enum RaftEventType {
     },
 
     /// Log replication events
+    LogEntryProposed {
+        proposed_index: u64,
+        term: u64,
+        command: String,
+        required_acks: usize,
+    },
+
     LogEntryAdded {
         log_index: u64,
         term: u64,
@@ -233,6 +240,26 @@ impl RaftEvent {
                 term,
                 votes_received,
                 total_votes,
+            },
+        )
+    }
+
+    /// Creates a log entry proposed event
+    pub fn log_entry_proposed(
+        node_id: NodeId,
+        term: u64,
+        proposed_index: u64,
+        command: String,
+        required_acks: usize,
+    ) -> Self {
+        Self::new(
+            node_id,
+            term,
+            RaftEventType::LogEntryProposed {
+                proposed_index,
+                term,
+                command,
+                required_acks,
             },
         )
     }

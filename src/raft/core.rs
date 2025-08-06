@@ -1,5 +1,6 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::time::{Duration, Instant};
 
@@ -96,6 +97,46 @@ impl Default for VolatileState {
     }
 }
 
+/// Represents a pending client command proposal awaiting consensus
+#[derive(Debug, Clone)]
+pub struct PendingProposal {
+    /// The log index where this proposal would be placed if committed
+    pub proposed_index: u64,
+    /// The term when this proposal was made
+    pub term: u64,
+    /// The command to be executed
+    pub command: String,
+    /// Set of node IDs that have acknowledged this proposal
+    pub acknowledgments: Vec<NodeId>,
+    /// When this proposal was created
+    pub created_at: Instant,
+}
+
+impl PendingProposal {
+    /// Creates a new pending proposal
+    pub fn new(proposed_index: u64, term: u64, command: String, leader_id: NodeId) -> Self {
+        Self {
+            proposed_index,
+            term,
+            command,
+            acknowledgments: vec![leader_id], // Leader implicitly acknowledges its own proposal
+            created_at: Instant::now(),
+        }
+    }
+
+    /// Adds an acknowledgment from a follower
+    pub fn add_acknowledgment(&mut self, node_id: NodeId) {
+        if !self.acknowledgments.contains(&node_id) {
+            self.acknowledgments.push(node_id);
+        }
+    }
+
+    /// Checks if this proposal has achieved majority consensus
+    pub fn has_majority(&self, cluster_size: usize) -> bool {
+        self.acknowledgments.len() >= (cluster_size / 2) + 1
+    }
+}
+
 /// Volatile state maintained only by leaders (reinitialized after election)
 #[derive(Debug, Clone)]
 pub struct LeaderVolatileState {
@@ -103,6 +144,8 @@ pub struct LeaderVolatileState {
     pub next_index: Vec<u64>,
     /// For each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
     pub match_index: Vec<u64>,
+    /// Pending proposals awaiting consensus (indexed by proposed log index)
+    pub pending_proposals: HashMap<u64, PendingProposal>,
 }
 
 impl LeaderVolatileState {
@@ -111,6 +154,7 @@ impl LeaderVolatileState {
         Self {
             next_index: vec![last_log_index + 1; cluster_size],
             match_index: vec![0; cluster_size],
+            pending_proposals: HashMap::new(),
         }
     }
 }
@@ -174,20 +218,20 @@ impl Node {
         self.election_timeout_duration = Duration::from_millis(timeout_ms);
         self.election_timeout = Instant::now() + self.election_timeout_duration;
     }
-    
+
     /// Sets the election timeout to a specific duration in milliseconds
     /// Used for testing and simulation purposes
     pub fn set_election_timeout(&mut self, timeout_ms: u64) {
         self.election_timeout_duration = Duration::from_millis(timeout_ms);
         self.election_timeout = Instant::now() + self.election_timeout_duration;
     }
-    
+
     /// Simulates a temporary failure for the specified duration
     /// During this time, the node won't send heartbeats or respond to requests
     pub fn simulate_failure(&mut self, duration_ms: u64) {
         self.simulated_failure_until = Some(Instant::now() + Duration::from_millis(duration_ms));
     }
-    
+
     /// Checks if the node is currently in a simulated failure state
     pub fn is_failed(&self) -> bool {
         if let Some(failure_end) = self.simulated_failure_until {
@@ -196,7 +240,7 @@ impl Node {
             false
         }
     }
-    
+
     /// Recovers from simulated failure
     pub fn recover_from_failure(&mut self) {
         self.simulated_failure_until = None;

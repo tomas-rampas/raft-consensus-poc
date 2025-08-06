@@ -58,6 +58,8 @@ class RaftVisualization {
             message: '#667eea',
             heartbeat: '#ff8cc8',
             vote: '#ffd43b',
+            proposal: '#9c88ff',     // Purple for proposal messages
+            ack: '#69db7c',         // Green for ACK messages
             text: '#333'
         };
         
@@ -191,6 +193,38 @@ class RaftVisualization {
     }
     
     /**
+     * Add message animation for consensus flow
+     * @param {Object} messageData - Message data
+     */
+    addConsensusMessage(messageData) {
+        console.log('💌 Consensus message:', messageData);
+        
+        // Create message animations for consensus flow
+        if (messageData.type === 'proposal_replication') {
+            // Leader sending proposal to all followers
+            const leaderNode = this.nodes.get(messageData.from);
+            if (leaderNode) {
+                messageData.targets.forEach(targetId => {
+                    this.addMessage({
+                        from: messageData.from,
+                        to: targetId,
+                        messageType: 'proposal',
+                        details: messageData.command || 'proposal'
+                    });
+                });
+            }
+        } else if (messageData.type === 'proposal_ack') {
+            // Follower sending ACK back to leader
+            this.addMessage({
+                from: messageData.from,
+                to: messageData.to,
+                messageType: 'ack',
+                details: messageData.details || 'ack'
+            });
+        }
+    }
+    
+    /**
      * Add message animation
      * @param {Object} messageData - Message data
      */
@@ -241,12 +275,24 @@ class RaftVisualization {
             return;
         }
         
-        // Simple message creation - no artificial delays or duration changes
+        // Create message with appropriate duration based on type
+        const messageType = messageData.messageType || 'message';
+        let duration = 1000; // Default 1 second
+        
+        // Proposal messages are slightly slower to show the consensus process
+        if (messageType === 'proposal' || messageType === 'log_proposal') {
+            duration = 1200;
+        }
+        // ACK messages are faster to show quick response
+        else if (messageType === 'ack' || messageType === 'proposal_ack') {
+            duration = 800;
+        }
+        
         const message = {
             id: Date.now() + Math.random(),
             from: messageData.from,
             to: messageData.to,
-            type: messageData.messageType || 'message',
+            type: messageType,
             startX: fromNode.x,
             startY: fromNode.y,
             endX: toNode.x,
@@ -255,8 +301,9 @@ class RaftVisualization {
             currentY: fromNode.y,
             progress: 0,
             startTime: Date.now(),
-            duration: 1000, // 1 second for all messages
-            color: this.getMessageColor(messageData.messageType)
+            duration: duration,
+            color: this.getMessageColor(messageType),
+            details: messageData.details || ''
         };
         
         this.messages.push(message);
@@ -344,6 +391,14 @@ class RaftVisualization {
             case 'vote':
             case 'RequestVoteRequest':
                 return this.colors.vote;
+            case 'proposal':
+            case 'log_proposal':
+            case 'proposal_replication':
+                return this.colors.proposal;
+            case 'ack':
+            case 'proposal_ack':
+            case 'AppendEntriesResponse':
+                return this.colors.ack;
             case 'client_command':
                 return this.colors.message;
             default:
@@ -766,12 +821,18 @@ class RaftVisualization {
     drawMessages() {
         this.messages.forEach(message => {
             const alpha = 1 - message.progress * 0.5; // Fade out as it travels
-            const size = 8 + (1 - message.progress) * 4; // Shrink as it travels
+            let size = 8 + (1 - message.progress) * 4; // Shrink as it travels
+            
+            // Make proposal and ACK messages slightly larger
+            if (message.type === 'proposal' || message.type === 'ack') {
+                size += 2;
+            }
             
             this.ctx.save();
             this.ctx.globalAlpha = alpha;
             this.ctx.fillStyle = message.color;
             
+            // Draw main message circle
             this.ctx.beginPath();
             this.ctx.arc(message.currentX, message.currentY, size, 0, 2 * Math.PI);
             this.ctx.fill();
@@ -782,6 +843,30 @@ class RaftVisualization {
             this.ctx.beginPath();
             this.ctx.arc(message.currentX, message.currentY, size * 0.6, 0, 2 * Math.PI);
             this.ctx.fill();
+            
+            // Add special indicators for consensus messages
+            if (message.type === 'proposal') {
+                // Draw 'P' for proposal
+                this.ctx.shadowBlur = 0;
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = 'bold 8px Arial';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillText('P', message.currentX, message.currentY);
+            } else if (message.type === 'ack') {
+                // Draw checkmark for ACK
+                this.ctx.shadowBlur = 0;
+                this.ctx.strokeStyle = 'white';
+                this.ctx.lineWidth = 2;
+                this.ctx.lineCap = 'round';
+                
+                // Draw checkmark
+                this.ctx.beginPath();
+                this.ctx.moveTo(message.currentX - 3, message.currentY);
+                this.ctx.lineTo(message.currentX - 1, message.currentY + 2);
+                this.ctx.lineTo(message.currentX + 3, message.currentY - 2);
+                this.ctx.stroke();
+            }
             
             this.ctx.restore();
         });
