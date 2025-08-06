@@ -134,8 +134,8 @@ pub async fn run_node(
     loop {
         // Calculate the current timeout based on node state
         let timeout_duration = if matches!(node.state, NodeState::Leader) {
-            // Leaders send heartbeats more frequently
-            Duration::from_millis(50) // 50ms heartbeat interval
+            // Leaders send heartbeats as fast as possible
+            Duration::from_millis(25) // 25ms heartbeat interval - fastest possible
         } else {
             // Followers and candidates check for election timeout
             let remaining = node
@@ -185,17 +185,71 @@ async fn handle_incoming_message(
             debug!(
                 node_id = node.id,
                 "📥 RECEIVED: AppendEntries from leader {} with {} entries (term: {})",
-                from, request.entries.len(), request.term
+                from,
+                request.entries.len(),
+                request.term
             );
-            
+
+            // Capture state before handling AppendEntries to detect changes
+            let old_state = node.state.clone();
+
             let response = node.handle_append_entries(&request);
-            let response_message = RpcMessage::append_entries_response(node.id, from, response.clone());
+
+            // Check if state changed during AppendEntries handling and emit StateChange event
+            if old_state != node.state {
+                debug!(
+                    node_id = node.id,
+                    "🚨 STATE CHANGED: {} → {} due to AppendEntries from leader {}",
+                    match old_state {
+                        NodeState::Leader => "Leader",
+                        NodeState::Candidate => "Candidate",
+                        NodeState::Follower => "Follower",
+                    },
+                    match node.state {
+                        NodeState::Leader => "Leader",
+                        NodeState::Candidate => "Candidate",
+                        NodeState::Follower => "Follower",
+                    },
+                    from
+                );
+
+                let state_change_event = crate::raft::events::RaftEvent::state_change(
+                    node.id,
+                    node.persistent_state.current_term,
+                    old_state,
+                    node.state.clone(),
+                    "Stepped down due to AppendEntries from leader".to_string(),
+                );
+                let _ = event_broadcaster.emit(state_change_event);
+            }
+            let response_message =
+                RpcMessage::append_entries_response(node.id, from, response.clone());
 
             debug!(
                 node_id = node.id,
                 "📤 RESPONDING: AppendEntries response to leader {} → {}",
-                from, if response.success { "SUCCESS (ACK)" } else { "FAILED (NACK)" }
+                from,
+                if response.success {
+                    "SUCCESS (ACK)"
+                } else {
+                    "FAILED (NACK)"
+                }
             );
+
+            // Emit MessageSent event for ACK/NACK response visualization
+            let response_details = if response.success {
+                "ACK - AppendEntries accepted"
+            } else {
+                "NACK - AppendEntries rejected"
+            };
+            let response_event = crate::raft::events::RaftEvent::message_sent(
+                node.id,
+                from,
+                node.persistent_state.current_term,
+                "AppendEntriesResponse".to_string(),
+                response_details.to_string(),
+            );
+            let _ = event_broadcaster.emit(response_event);
 
             if let Err(e) = cluster_channels.send_to_node(from, response_message) {
                 eprintln!("Failed to send AppendEntries response: {e:?}");
@@ -205,6 +259,21 @@ async fn handle_incoming_message(
             if matches!(node.state, NodeState::Leader) {
                 // Before processing, capture current state for comparison
                 let old_log_length = node.last_log_index();
+
+                // Emit MessageSent event for ACK visualization when leader processes response
+                let ack_details = if response.success {
+                    "ACK processed by leader"
+                } else {
+                    "NACK processed by leader"  
+                };
+                let leader_ack_event = crate::raft::events::RaftEvent::message_sent(
+                    from,
+                    node.id,
+                    node.persistent_state.current_term,
+                    "AppendEntriesResponse".to_string(),
+                    ack_details.to_string(),
+                );
+                let _ = event_broadcaster.emit(leader_ack_event);
 
                 node.handle_append_entries_response(from, &response);
 
@@ -218,7 +287,7 @@ async fn handle_incoming_message(
                         old_log_length + 1,
                         new_log_length
                     );
-                    
+
                     // Emit LogEntryAdded events for newly committed entries
                     for log_index in (old_log_length + 1)..=new_log_length {
                         if let Some(log_entry) =
@@ -255,26 +324,44 @@ async fn handle_incoming_message(
                 let became_leader = node.process_vote_response(&response);
                 if became_leader {
                     let old_state = node.state.clone();
+
+                    // Capture vote count BEFORE calling become_leader() (which resets votes_received to 0)
+                    let final_votes_received = node.votes_received;
+                    let total_votes = node.cluster_size;
+
                     node.become_leader();
 
-                    // Emit leader elected event
+                    info!(
+                        node_id = node.id,
+                        "🚨 LEADER ELECTION SUCCESS: Node {} transitioning {} → {} (term {})",
+                        node.id,
+                        match old_state {
+                            NodeState::Leader => "Leader",
+                            NodeState::Candidate => "Candidate",
+                            NodeState::Follower => "Follower",
+                        },
+                        match node.state {
+                            NodeState::Leader => "Leader",
+                            NodeState::Candidate => "Candidate",
+                            NodeState::Follower => "Follower",
+                        },
+                        node.persistent_state.current_term
+                    );
+
+                    // Emit consolidated leader elected event (includes state change info)
                     let leader_event = RaftEvent::leader_elected(
                         node.id,
                         node.persistent_state.current_term,
-                        node.votes_received,
-                        node.cluster_size,
+                        final_votes_received,
+                        total_votes,
                     );
                     let _ = event_broadcaster.emit(leader_event);
 
-                    // Emit state change event
-                    let state_change_event = RaftEvent::state_change(
-                        node.id,
-                        node.persistent_state.current_term,
-                        old_state,
-                        node.state.clone(),
-                        "Won election with majority votes".to_string(),
+                    info!(
+                        node_id = node.id,
+                        "📡 EVENTS EMITTED: LeaderElected + StateChange events sent for new leader {}",
+                        node.id
                     );
-                    let _ = event_broadcaster.emit(state_change_event);
 
                     // Send initial heartbeats as new leader
                     send_heartbeats(node, cluster_channels, event_broadcaster).await;
@@ -283,7 +370,43 @@ async fn handle_incoming_message(
         }
         RpcMessage::ClientCommand { command, .. } => {
             // Check for special simulation commands
-            if command == "SIMULATE_LEADER_FAILURE" {
+            if command == "QUERY_STATUS" {
+                // WebSocket client is querying cluster state - only leader should respond
+                if matches!(node.state, NodeState::Leader) {
+                    info!(
+                        node_id = node.id,
+                        "🔍 Responding to cluster status query - I am the leader (term {})", 
+                        node.persistent_state.current_term
+                    );
+
+                    // Emit a ClusterStatus event with real current state
+                    let cluster_status_event = RaftEvent::new(
+                        node.id,
+                        node.persistent_state.current_term,
+                        RaftEventType::ClusterStatus {
+                            total_nodes: node.cluster_size,
+                            active_nodes: node.cluster_size, // Assume all active for now
+                            leader_id: Some(node.id),
+                            current_term: node.persistent_state.current_term,
+                        },
+                    );
+                    let _ = event_broadcaster.emit(cluster_status_event);
+                    
+                    info!(
+                        node_id = node.id,
+                        "📡 Emitted ClusterStatus event: leader={}, term={}", 
+                        node.id, node.persistent_state.current_term
+                    );
+                } else {
+                    // Non-leaders should not respond to avoid multiple responses
+                    debug!(
+                        node_id = node.id,
+                        "🔍 Received status query but I'm not the leader (state: {:?})", 
+                        node.state
+                    );
+                }
+                return; // Don't process as normal command
+            } else if command == "SIMULATE_LEADER_FAILURE" {
                 info!(
                     node_id = node.id,
                     "👑 Received leader failure simulation command, state: {:?}", node.state
@@ -327,7 +450,9 @@ async fn handle_incoming_message(
                 info!(
                     node_id = node.id,
                     "🔄 CONSENSUS FLOW START: Client command '{}' accepted as pending proposal at index {} (term {})",
-                    command, proposed_index, node.persistent_state.current_term
+                    command,
+                    proposed_index,
+                    node.persistent_state.current_term
                 );
 
                 // Emit client command received event
@@ -360,7 +485,8 @@ async fn handle_incoming_message(
                     info!(
                         node_id = node.id,
                         "📤 STEP 2/4 - REPLICATING: Broadcasting AppendEntries with proposal {} to {} followers",
-                        proposed_index, node.cluster_size - 1
+                        proposed_index,
+                        node.cluster_size - 1
                     );
                     send_append_entries_to_all_followers(node, cluster_channels, event_broadcaster)
                         .await;
@@ -498,18 +624,24 @@ async fn send_heartbeats(
         .filter(|&id| id != node.id)
         .collect();
 
-    // Emit heartbeat sent event
-    let heartbeat_event = RaftEvent::heartbeat_sent(
-        node.id,
-        node.persistent_state.current_term,
-        follower_ids.clone(),
-        node.volatile_state.commit_index,
-    );
-    let _ = event_broadcaster.emit(heartbeat_event);
+    // Send heartbeats and emit individual MessageSent events (no separate HeartbeatSent)
+    for (i, heartbeat) in heartbeats.into_iter().enumerate() {
+        let follower_id = follower_ids[i];
 
-    for heartbeat in heartbeats {
-        let message = RpcMessage::append_entries_request(node.id, 0, heartbeat); // 'to' will be updated by broadcast
-        cluster_channels.broadcast(message, node.id);
+        // Emit MessageSent event for each heartbeat
+        let message_event = RaftEvent::message_sent(
+            node.id,
+            follower_id,
+            node.persistent_state.current_term,
+            "AppendEntriesRequest".to_string(),
+            "Heartbeat".to_string(),
+        );
+        let _ = event_broadcaster.emit(message_event);
+
+        let message = RpcMessage::append_entries_request(node.id, follower_id, heartbeat);
+        if let Err(e) = cluster_channels.send_to_node(follower_id, message) {
+            eprintln!("Failed to send heartbeat to node {follower_id}: {e:?}");
+        }
     }
 }
 
@@ -525,7 +657,7 @@ async fn send_append_entries_to_all_followers(
 
     let leader_state = node.leader_state.as_ref().unwrap();
     let pending_count = leader_state.pending_proposals.len();
-    
+
     // Send tailored AppendEntries to each follower
     for follower_id in 0..cluster_channels.size() {
         if follower_id != node.id {
@@ -533,9 +665,30 @@ async fn send_append_entries_to_all_followers(
                 debug!(
                     node_id = node.id,
                     "📤 → Follower {}: Sending AppendEntries with {} entries ({} committed + {} pending)",
-                    follower_id, append_entries.entries.len(), node.last_log_index(), pending_count
+                    follower_id,
+                    append_entries.entries.len(),
+                    node.last_log_index(),
+                    pending_count
                 );
-                
+
+                // Emit message sent event for consensus visualization
+                let message_details = if pending_count > 0 {
+                    format!(
+                        "Proposal replication with {} entries",
+                        append_entries.entries.len()
+                    )
+                } else {
+                    format!("Replication with {} entries", append_entries.entries.len())
+                };
+                let message_event = crate::raft::events::RaftEvent::message_sent(
+                    node.id,
+                    follower_id,
+                    node.persistent_state.current_term,
+                    "AppendEntriesRequest".to_string(),
+                    message_details,
+                );
+                let _ = _event_broadcaster.emit(message_event);
+
                 let message =
                     RpcMessage::append_entries_request(node.id, follower_id, append_entries);
                 if let Err(e) = cluster_channels.send_to_node(follower_id, message) {

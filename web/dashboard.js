@@ -5,6 +5,10 @@
 
 class RaftDashboard {
     constructor() {
+        console.log('🎛️ RaftDashboard constructor called!');
+        console.log('🎛️ DOM readyState:', document.readyState);
+        console.log('🎛️ Direct test - can we find showReplicationEvents?', document.getElementById('showReplicationEvents'));
+        
         this.statistics = {
             totalMessages: 0,
             leaderElections: 0,
@@ -54,10 +58,19 @@ class RaftDashboard {
             eventTimeline: document.getElementById('eventTimeline'),
             timelineClearBtn: document.getElementById('timelineClearBtn'),
             showHeartbeatEvents: document.getElementById('showHeartbeatEvents'),
+            showReplicationEvents: document.getElementById('showReplicationEvents'),
             
             // Nodes
             nodesList: document.getElementById('nodesList')
         };
+        
+        // Check for DOM element confusion
+        if (this.elements.showHeartbeats === this.elements.showReplicationEvents) {
+            console.error('🚨 BUG: showHeartbeats and showReplicationEvents are the same element!');
+        }
+        if (this.elements.showMessages === this.elements.showReplicationEvents) {
+            console.error('🚨 BUG: showMessages and showReplicationEvents are the same element!');
+        }
         
         // Debug: Check which elements were found
         const missingElements = [];
@@ -187,16 +200,24 @@ class RaftDashboard {
             });
         }
         
-        // Visualization settings
+        // Visualization settings - PROTECTED to only respond to visualization controls
         if (this.elements.showHeartbeats) {
-            this.elements.showHeartbeats.addEventListener('change', () => {
-                this.updateVisualizationSettings();
+            this.elements.showHeartbeats.addEventListener('change', (event) => {
+                if (event.target.id === 'showHeartbeats') {
+                    this.updateVisualizationSettings();
+                } else {
+                    console.error('🚨 WRONG TARGET for showHeartbeats listener:', event.target.id);
+                }
             });
         }
         
         if (this.elements.showMessages) {
-            this.elements.showMessages.addEventListener('change', () => {
-                this.updateVisualizationSettings();
+            this.elements.showMessages.addEventListener('change', (event) => {
+                if (event.target.id === 'showMessages') {
+                    this.updateVisualizationSettings();
+                } else {
+                    console.error('🚨 WRONG TARGET for showMessages listener:', event.target.id);
+                }
             });
         }
         
@@ -204,6 +225,55 @@ class RaftDashboard {
         if (this.elements.showHeartbeatEvents) {
             this.elements.showHeartbeatEvents.addEventListener('change', () => {
                 this.handleHeartbeatFilterChange();
+            });
+        }
+        
+        // Timeline replication filter - COMPLETELY ISOLATED
+        if (this.elements.showReplicationEvents) {
+            this.elements.showReplicationEvents.addEventListener('change', (event) => {
+                // COMPLETE ISOLATION: Stop all event propagation immediately
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+                
+                // Simple inline timeline update - no external function calls
+                const showReplications = event.target.checked;
+                
+                if (!showReplications) {
+                    // Filter replication events inline
+                    this.eventHistory = this.eventHistory.filter(event => {
+                        const message = event.message.toLowerCase();
+                        return !(message.includes('replication') || 
+                                message.includes('acknowledgment') ||
+                                message.includes('ack') ||
+                                message.includes('appendentries'));
+                    });
+                }
+                
+                // Update timeline display directly
+                if (this.elements.eventTimeline) {
+                    const timeline = this.elements.eventTimeline;
+                    timeline.innerHTML = '';
+                    
+                    this.eventHistory.forEach(event => {
+                        const eventElement = document.createElement('div');
+                        eventElement.className = `timeline-event ${event.type}`;
+                        
+                        const timeElement = document.createElement('div');
+                        timeElement.className = 'event-time';
+                        timeElement.textContent = new Date(event.timestamp).toLocaleTimeString();
+                        
+                        const messageElement = document.createElement('div');
+                        messageElement.className = 'event-description';
+                        messageElement.textContent = event.message;
+                        
+                        eventElement.appendChild(timeElement);
+                        eventElement.appendChild(messageElement);
+                        timeline.appendChild(eventElement);
+                    });
+                    
+                    timeline.scrollTop = 0;
+                }
             });
         }
     }
@@ -317,8 +387,8 @@ class RaftDashboard {
      */
     updateVisualizationSettings() {
         const settings = {
-            showHeartbeats: this.elements.showHeartbeats?.checked ?? true,
-            showMessages: this.elements.showMessages?.checked ?? true
+            showHeartbeats: document.getElementById('showHeartbeats').checked,
+            showMessages: document.getElementById('showMessages').checked
         };
         
         this.emit('updateVisualizationSettings', settings);
@@ -337,10 +407,27 @@ class RaftDashboard {
         // Update node information
         this.updateNodeFromEvent(event);
         
-        // Add to timeline
+        // Add to timeline with enhanced categorization
         const eventType = typeof event.event_type === 'string' ? event.event_type : event.event_type?.type;
+        const eventData = typeof event.event_type === 'object' ? event.event_type : event.event_data;
+        
+        // Enhanced message categorization
+        let timelineType = this.getEventCategory(eventType);
+        
+        // Special handling for MessageSent to distinguish proposal vs ACK
+        if (eventType === 'MessageSent') {
+            const messageType = eventData?.message_type || '';
+            const details = eventData?.message_details || '';
+            
+            if (messageType === 'AppendEntriesRequest' && (details.includes('Proposal') || details.includes('proposal'))) {
+                timelineType = 'proposal';
+            } else if (messageType === 'AppendEntriesResponse' && (details.includes('ACK') || details.includes('ack'))) {
+                timelineType = 'consensus';
+            }
+        }
+        
         this.addTimelineEvent({
-            type: this.getEventCategory(eventType),
+            type: timelineType,
             message: this.formatEventMessage(event),
             timestamp: event.timestamp || Date.now(),
             nodeId: event.node_id,
@@ -543,12 +630,20 @@ class RaftDashboard {
                 return 'leader-election';
             case 'StateChange':
                 return 'state-change';
-            case 'MessageSent':
             case 'HeartbeatSent':
+                return 'heartbeat';
+            case 'MessageSent':
                 return 'message';
+            case 'MessageReceived':
+                return 'message';
+            case 'LogEntryProposed':
+                return 'proposal';
             case 'LogEntryAdded':
             case 'ClientCommandReceived':
                 return 'log-entry';
+            case 'LogEntryReplicated':
+            case 'LogEntryCommitted':
+                return 'consensus';
             default:
                 return 'general';
         }
@@ -579,6 +674,9 @@ class RaftDashboard {
             return `Unknown event format: ${JSON.stringify(event).substring(0, 100)}...`;
         }
         
+        // Debug: Uncomment to debug event message formatting
+        // console.log('📝 Formatting event message:', { eventType, eventData, nodeId, term });
+        
         switch (eventType) {
             case 'StateChange':
                 const oldState = eventData?.from_state || eventData?.old_state || 'unknown';
@@ -593,10 +691,48 @@ class RaftDashboard {
             case 'ElectionTimeout':
                 return `Node ${nodeId} election timeout in state ${eventData?.current_state || 'unknown'} (term ${term})`;
             
+            case 'LogEntryProposed':
+                const proposedCommand = eventData?.command || 'unknown';
+                const proposedIndex = eventData?.proposed_index || 0;
+                const requiredAcks = eventData?.required_acks || 0;
+                return `Node ${nodeId} proposed "${proposedCommand}" at index ${proposedIndex} (needs ${requiredAcks} acks, term ${term})`;
+            
             case 'LogEntryAdded':
                 const command = eventData?.command || 'unknown';
                 const logIndex = eventData?.log_index || 0;
                 return `Node ${nodeId} added log entry "${command}" at index ${logIndex} (term ${term})`;
+            
+            case 'LogEntryReplicated':
+                const replicatedIndex = eventData?.log_index || 0;
+                return `Node ${nodeId} replicated entry at index ${replicatedIndex} (term ${term})`;
+            
+            case 'LogEntryCommitted':
+                const committedCommand = eventData?.command || 'unknown';
+                const committedIndex = eventData?.log_index || 0;
+                return `Node ${nodeId} committed "${committedCommand}" at index ${committedIndex} (term ${term})`;
+            
+            case 'MessageSent':
+                const messageType = eventData?.message_type || 'message';
+                const fromNode = eventData?.from || nodeId;
+                const toNode = eventData?.to || 0;
+                
+                if (messageType === 'AppendEntriesRequest') {
+                    const details = eventData?.message_details || '';
+                    if (details.includes('Proposal') || details.includes('proposal')) {
+                        return `Node ${fromNode} sent proposal message to Node ${toNode} (term ${term})`;
+                    } else {
+                        return `Node ${fromNode} sent replication message to Node ${toNode} (term ${term})`;
+                    }
+                } else if (messageType === 'AppendEntriesResponse') {
+                    const details = eventData?.message_details || '';
+                    if (details.includes('ACK') || details.includes('ack')) {
+                        return `Node ${fromNode} sent acknowledgment to Node ${toNode} (term ${term})`;
+                    } else {
+                        return `Node ${fromNode} sent response to Node ${toNode} (term ${term})`;
+                    }
+                } else {
+                    return `Node ${fromNode} sent ${messageType} to Node ${toNode} (term ${term})`;
+                }
             
             case 'HeartbeatSent':
                 const leaderId = eventData?.leader_id || nodeId;
@@ -614,6 +750,32 @@ class RaftDashboard {
                 return `Cluster status: ${activeNodes}/${clusterTotalNodes} nodes active (term ${term})`;
             
             default:
+                // Debug: Uncomment to debug unhandled events
+                // console.warn('🔍 Unhandled event type in formatEventMessage:', eventType, eventData);
+                
+                // Special handling for events that might not match exact case
+                if (eventType && eventType.toLowerCase().includes('messagesent')) {
+                    const messageType = eventData?.message_type || 'message';
+                    const fromNode = eventData?.from || nodeId;
+                    const toNode = eventData?.to || 0;
+                    
+                    if (messageType === 'AppendEntriesRequest') {
+                        const details = eventData?.message_details || '';
+                        if (details.includes('Proposal') || details.includes('proposal')) {
+                            return `Node ${fromNode} sent proposal message to Node ${toNode} (term ${term})`;
+                        } else {
+                            return `Node ${fromNode} sent replication message to Node ${toNode} (term ${term})`;
+                        }
+                    } else if (messageType === 'AppendEntriesResponse') {
+                        const details = eventData?.message_details || '';
+                        if (details.includes('ACK') || details.includes('ack')) {
+                            return `Node ${fromNode} sent acknowledgment to Node ${toNode} (term ${term})`;
+                        } else {
+                            return `Node ${fromNode} sent response to Node ${toNode} (term ${term})`;
+                        }
+                    }
+                }
+                
                 return `Node ${nodeId}: ${eventType} (term ${term})`;
         }
     }
@@ -625,9 +787,15 @@ class RaftDashboard {
     addTimelineEvent(event) {
         // Check if heartbeat events should be filtered out before adding to history
         const showHeartbeats = this.elements.showHeartbeatEvents?.checked ?? true;
+        const showReplications = this.elements.showReplicationEvents?.checked ?? true;
         
         // If heartbeats are filtered out and this is a heartbeat event, don't add it to history at all
         if (!showHeartbeats && this.isHeartbeatEvent(event)) {
+            return; // Skip adding this event entirely
+        }
+        
+        // If replications are filtered out and this is a replication event, don't add it to history at all
+        if (!showReplications && this.isReplicationEvent(event)) {
             return; // Skip adding this event entirely
         }
         
@@ -654,6 +822,27 @@ class RaftDashboard {
         }
         
         // Update display
+        this.updateTimelineDisplay();
+    }
+    
+    /**
+     * Handle replication filter checkbox change
+     */
+    handleReplicationFilterChange() {
+        const showReplications = this.elements.showReplicationEvents?.checked ?? true;
+        console.error('🔽 REPLICATION FILTER CHANGED:', showReplications);
+        
+        // TEMPORARY: Disable filtering to test if this causes message flood
+        console.error('🔽 TEMPORARY: Filtering disabled to test message flood');
+        /*
+        if (!showReplications) {
+            // Filter out replication/ACK events from existing history
+            this.eventHistory = this.eventHistory.filter(event => !this.isReplicationEvent(event));
+            console.log('🔽 Filtered out replication/ACK events from timeline');
+        }
+        */
+        
+        // Update timeline display only
         this.updateTimelineDisplay();
     }
     
@@ -699,6 +888,24 @@ class RaftDashboard {
         return message.includes('heartbeat') || 
                message.includes('sent heartbeat') ||
                message.includes('heartbeats');
+    }
+    
+    /**
+     * Check if an event is a replication/ACK-related event
+     * @param {Object} event - Timeline event
+     * @returns {boolean} True if it's a replication/ACK event
+     */
+    isReplicationEvent(event) {
+        // Check if the event message contains replication/ACK-related keywords
+        const message = event.message.toLowerCase();
+        return message.includes('replication') || 
+               message.includes('acknowledgment') ||
+               message.includes('acknowledge') ||
+               message.includes('ack') ||
+               message.includes('sent replication message') ||
+               message.includes('sent response') ||
+               message.includes('sent appendentries') ||
+               message.includes('appendentries');
     }
     
     /**

@@ -126,8 +126,7 @@ async fn handle_websocket_connection(
         warn!("Failed to send welcome message: {}", e);
     }
 
-    // Send a cluster status event instead of fake state changes
-    // This helps the client understand the cluster without overwriting real state
+    // Send initial cluster status event
     let cluster_status_event = crate::raft::events::RaftEvent::new(
         0, // Use node 0 as sender
         1, // Use current term (will be updated by real events)
@@ -144,6 +143,9 @@ async fn handle_websocket_connection(
             warn!("Failed to send cluster status: {}", e);
         }
     }
+
+    // WebSocket connected - real events from the cluster will be processed normally
+    info!("🔍 WebSocket client connected - will receive real cluster events");
 
     // Handle incoming messages and outgoing events concurrently
     loop {
@@ -363,6 +365,54 @@ async fn handle_client_command(
                         "type": "leader_failure_simulated",
                         "success": false,
                         "error": "Cluster channels not available",
+                        "timestamp": chrono::Utc::now().timestamp_millis()
+                    });
+                    ws_sender.send(Message::Text(response.to_string())).await?;
+                }
+            }
+            "query_cluster_state" => {
+                // Client wants to query current cluster state
+                // This is used to determine the current leader when connecting late
+                info!("🔍 Client requesting current cluster state");
+                
+                if let Some(cluster_channels) = cluster_channels {
+                    // Send query to all nodes - the leader will respond with proper status
+                    let mut query_sent = false;
+                    for node_id in 0..cluster_channels.cluster_size {
+                        let query_msg = RpcMessage::client_command(999, node_id, "QUERY_STATUS".to_string());
+                        if cluster_channels.send_to_node(node_id, query_msg).is_ok() {
+                            query_sent = true;
+                        }
+                    }
+                    
+                    if query_sent {
+                        info!("📤 Sent status queries to cluster nodes - leader will emit current status");
+                        
+                        // Send acknowledgment that query was initiated
+                        let response = serde_json::json!({
+                            "type": "cluster_state_query_initiated",
+                            "message": "Querying cluster for current state - leader status will follow",
+                            "timestamp": chrono::Utc::now().timestamp_millis()
+                        });
+                        ws_sender.send(Message::Text(response.to_string())).await?;
+                    } else {
+                        // Fallback: send basic cluster info without leader
+                        let cluster_status = serde_json::json!({
+                            "type": "ClusterStatus", 
+                            "total_nodes": cluster_channels.cluster_size,
+                            "active_nodes": cluster_channels.cluster_size,
+                            "leader_id": null,
+                            "current_term": 0,
+                            "message": "Cluster not responding to status query",
+                            "timestamp": chrono::Utc::now().timestamp_millis()
+                        });
+                        ws_sender.send(Message::Text(cluster_status.to_string())).await?;
+                    }
+                } else {
+                    // No cluster available
+                    let response = serde_json::json!({
+                        "type": "error",
+                        "message": "Cluster not available",
                         "timestamp": chrono::Utc::now().timestamp_millis()
                     });
                     ws_sender.send(Message::Text(response.to_string())).await?;

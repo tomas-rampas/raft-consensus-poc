@@ -391,15 +391,33 @@ input[type="text"]:focus {
 }
 
 .timeline-event.leader-election {
-    border-left-color: #51cf66;
+    border-left-color: #40c057;
+    background: #ebfbee;
 }
 
 .timeline-event.state-change {
-    border-left-color: #ffd43b;
+    border-left-color: #fab005;
+    background: #fff8db;
 }
 
 .timeline-event.message {
-    border-left-color: #74c0fc;
+    border-left-color: #339af0;
+    background: #e7f5ff;
+}
+
+.timeline-event.consensus {
+    border-left-color: #7950f2;
+    background: #f3f0ff;
+}
+
+.timeline-event.proposal {
+    border-left-color: #fd7e14;
+    background: #fff4e6;
+}
+
+.timeline-event.heartbeat {
+    border-left-color: #e64980;
+    background: #ffebf0;
 }
 
 .timeline-event.error {

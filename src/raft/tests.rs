@@ -140,16 +140,15 @@ mod core_tests {
         // Follower should not send heartbeats
         assert!(!node.should_send_heartbeat());
 
-        // Simulate becoming leader
-        node.state = NodeState::Leader;
-        node.update_heartbeat_time();
+        // Simulate becoming leader (proper initialization)
+        node.become_leader();
 
         // Should not need heartbeat immediately
         assert!(!node.should_send_heartbeat());
 
-        // Force heartbeat interval to pass
+        // Force heartbeat interval to pass (heartbeat_interval is 200ms)
         node.last_heartbeat_time =
-            std::time::Instant::now() - std::time::Duration::from_millis(100);
+            std::time::Instant::now() - std::time::Duration::from_millis(250);
         assert!(node.should_send_heartbeat());
     }
 

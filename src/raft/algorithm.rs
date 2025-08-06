@@ -283,7 +283,7 @@ impl Node {
                 "🎯 STEP 4/4 - COMMITTING: Proposal {} achieved consensus → moving to committed log",
                 proposed_index
             );
-            
+
             // Add the proposal to the actual log
             let log_entry =
                 crate::raft::core::LogEntry::new(proposal.term, proposal.command.clone());
@@ -447,7 +447,7 @@ impl Node {
                     proposal.add_acknowledgment(follower_id);
                     let acks_received = proposal.acknowledgments.len();
                     let acks_needed = (self.cluster_size / 2) + 1;
-                    
+
                     info!(
                         node_id = self.id,
                         "📝 STEP 3/4 - ACK RECEIVED: Follower {} acknowledged proposal {} → {}/{} acks ({})",
@@ -455,7 +455,11 @@ impl Node {
                         proposed_index,
                         acks_received,
                         acks_needed,
-                        if acks_received >= acks_needed { "CONSENSUS ACHIEVED!" } else { "waiting for more..." }
+                        if acks_received >= acks_needed {
+                            "CONSENSUS ACHIEVED!"
+                        } else {
+                            "waiting for more..."
+                        }
                     );
                 }
             }
@@ -498,7 +502,7 @@ impl Node {
                 acks_count,
                 (self.cluster_size / 2) + 1
             );
-            
+
             if self.commit_proposal(proposed_index) {
                 committed_proposals.push(proposed_index);
             }

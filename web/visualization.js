@@ -58,7 +58,7 @@ class RaftVisualization {
             message: '#667eea',
             heartbeat: '#ff8cc8',
             vote: '#ffd43b',
-            proposal: '#9c88ff',     // Purple for proposal messages
+            proposal: '#ff8a50',     // Orange for proposal messages
             ack: '#69db7c',         // Green for ACK messages
             text: '#333'
         };
@@ -175,13 +175,26 @@ class RaftVisualization {
             // Update existing node
             const node = this.nodes.get(nodeId);
             const oldState = node.state;
-            Object.assign(node, nodeData);
+            
+            // CRITICAL PROTECTION: Don't allow leader state to be overridden by follower
+            if (oldState === 'leader' && nodeData.state === 'follower') {
+                console.warn(`🔒 PROTECTION: Preventing leader Node ${nodeId} from being downgraded to follower without explicit StateChange`);
+                // Keep the leader state but update other properties
+                const { state, ...otherData } = nodeData;
+                Object.assign(node, otherData);
+                // Preserve leader state
+                node.state = 'leader';
+            } else {
+                Object.assign(node, nodeData);
+            }
+            
             node.lastActivity = Date.now();
             
             console.log('✅ Updated existing node:', {
                 nodeId,
                 stateChange: `${oldState} → ${node.state}`,
                 term: node.term,
+                protection: oldState === 'leader' && nodeData.state === 'follower' ? 'LEADER_PROTECTED' : 'NORMAL',
                 updatedNode: node
             });
         }
@@ -229,49 +242,87 @@ class RaftVisualization {
      * @param {Object} messageData - Message data
      */
     addMessage(messageData) {
-        console.log('💌 Visualization addMessage called:', {
-            messageData,
-            showMessages: this.showMessages,
-            showHeartbeats: this.showHeartbeats
-        });
+        // Determine message classification
+        // Since backend doesn't always send hasLogEntries flag, treat all AppendEntriesRequest as replication
+        // unless explicitly marked as heartbeat type
+        const isHeartbeatType = messageData.messageType === 'heartbeat';
+        const isReplicationMessage = messageData.messageType === 'AppendEntriesRequest';
         
-        // Only throttle non-heartbeat messages
+        // Smart deduplication instead of simple throttling
         const now = Date.now();
-        if (messageData.messageType !== 'heartbeat') {
-            if (now - this.lastMessageTime < this.messageThrottleMs) {
-                console.log('🚫 Message throttled (too frequent)');
-                return;
-            }
-            
-            // Limit total number of concurrent non-heartbeat animations
-            if (this.messages.length > 20) {
-                console.log('🚫 Message limit reached (max 20 concurrent)');
-                return;
+        const messageKey = `${messageData.messageType}-${messageData.from}-${messageData.to}`;
+        const debugKey = `${messageData.from}->${messageData.to}`;
+        
+        // DEBUG: Always log first message to each target to debug visual rendering
+        if (!this.debuggedPairs) this.debuggedPairs = new Set();
+        
+        if (!this.debuggedPairs.has(debugKey) || Math.random() < 0.05) {
+            console.error('🎯 VIZ addMessage:', messageData.messageType, 'from', messageData.from, 'to', messageData.to);
+            if (!this.debuggedPairs.has(debugKey)) {
+                this.debuggedPairs.add(debugKey);
+                console.error('📍 First message for pair:', debugKey);
             }
         }
         
-        if (!this.showMessages && messageData.messageType !== 'heartbeat') {
-            console.log('🚫 Message filtered out (showMessages=false)');
+        if (!this.recentMessages) this.recentMessages = new Map();
+        
+        // Check if we recently added this exact message type/route
+        const lastTime = this.recentMessages.get(messageKey);
+        if (lastTime && (now - lastTime) < 200) { // 200ms deduplication window
+            if (Math.random() < 0.01) { // Only log 1% of deduplicated messages
+                console.warn('🚫 DEDUPLICATED:', messageData.messageType, 'from', messageData.from, 'to', messageData.to);
+            }
             return;
         }
-        if (!this.showHeartbeats && messageData.messageType === 'heartbeat') {
-            console.log('🚫 Heartbeat filtered out (showHeartbeats=false)');
+        
+        // Clean up old entries (older than 1 second)
+        if (this.recentMessages.size > 50) {
+            for (const [key, time] of this.recentMessages.entries()) {
+                if (now - time > 1000) {
+                    this.recentMessages.delete(key);
+                }
+            }
+        }
+        
+        // Emergency brake - if too many messages are active, only allow heartbeats
+        if (this.messages.length > 50 && !isHeartbeatType) {
+            if (Math.random() < 0.02) {
+                console.warn('🚫 EMERGENCY BRAKE:', messageData.messageType, 'from', messageData.from, 'to', messageData.to, 'total:', this.messages.length);
+            }
+            return;
+        }
+        
+        // Filter messages based on visualization settings
+        // Filter heartbeat-type messages
+        if (!this.showHeartbeats && isHeartbeatType) {
+            if (Math.random() < 0.02) { // Only log 2% of filtered messages
+                console.log('🚫 FILTERED BY showHeartbeats:', messageData.messageType);
+            }
+            return;
+        }
+        
+        // Filter regular messages (including replication)
+        if (!this.showMessages && !isHeartbeatType) {
+            if (Math.random() < 0.02) { // Only log 2% of filtered messages
+                console.log('🚫 FILTERED BY showMessages:', messageData.messageType);
+            }
             return;
         }
         
         const fromNode = this.nodes.get(messageData.from);
         const toNode = this.nodes.get(messageData.to);
         
-        console.log('🔍 Message nodes lookup:', {
-            from: messageData.from,
-            to: messageData.to,
-            fromNode: fromNode ? 'found' : 'NOT FOUND',
-            toNode: toNode ? 'found' : 'NOT FOUND',
-            allNodes: Array.from(this.nodes.keys())
-        });
-        
         if (!fromNode || !toNode) {
-            console.warn('❌ Cannot add message - missing nodes');
+            console.error('🚨 MISSING NODES for message:', {
+                messageType: messageData.messageType,
+                from: messageData.from,
+                to: messageData.to,
+                fromNodeExists: !!fromNode,
+                toNodeExists: !!toNode,
+                allNodes: Array.from(this.nodes.keys()),
+                fromNodePos: fromNode ? `(${fromNode.x}, ${fromNode.y})` : 'N/A',
+                toNodePos: toNode ? `(${toNode.x}, ${toNode.y})` : 'N/A'
+            });
             return;
         }
         
@@ -308,18 +359,21 @@ class RaftVisualization {
         
         this.messages.push(message);
         
-        // Only update throttle timestamp for non-heartbeat messages
-        if (messageData.messageType !== 'heartbeat') {
-            this.lastMessageTime = now;
-        }
+        // Record this message in our deduplication map
+        this.recentMessages.set(messageKey, now);
         
-        console.log('✅ Added message animation:', {
-            messageId: message.id,
-            from: message.from,
-            to: message.to,
-            type: message.type,
-            totalMessages: this.messages.length
-        });
+        // Debug: Log successful message addition with position info 
+        if (!this.debuggedPairs.has(debugKey) || Math.random() < 0.02) {
+            console.error('✅ MESSAGE ADDED:', {
+                type: message.type,
+                from: message.from,
+                to: message.to,
+                startPos: `(${message.startX}, ${message.startY})`,
+                endPos: `(${message.endX}, ${message.endY})`,
+                color: message.color,
+                totalMessages: this.messages.length
+            });
+        }
         
         // Warning if too many messages accumulate
         if (this.messages.length > 50) {
@@ -384,26 +438,40 @@ class RaftVisualization {
      * @returns {string} Color hex code
      */
     getMessageColor(messageType) {
+        let color;
         switch (messageType) {
             case 'heartbeat':
+                color = this.colors.heartbeat; // Pink
+                break;
             case 'AppendEntriesRequest':
-                return this.colors.heartbeat;
+                color = this.colors.heartbeat; // Pink (for heartbeat AppendEntries)
+                break;
             case 'vote':
             case 'RequestVoteRequest':
-                return this.colors.vote;
+                color = this.colors.vote; // Yellow
+                break;
             case 'proposal':
             case 'log_proposal':
             case 'proposal_replication':
-                return this.colors.proposal;
+                color = this.colors.proposal; // Orange
+                break;
             case 'ack':
             case 'proposal_ack':
+                color = this.colors.ack; // Green
+                break;
             case 'AppendEntriesResponse':
-                return this.colors.ack;
+                color = this.colors.ack; // Green (for ACK responses)
+                break;
             case 'client_command':
-                return this.colors.message;
+                color = this.colors.message; // Blue
+                break;
             default:
-                return this.colors.message;
+                color = this.colors.message; // Default blue
+                break;
         }
+        
+        console.log(`🎨 MESSAGE COLOR: ${messageType} → ${color}`);
+        return color;
     }
     
     /**
@@ -819,7 +887,13 @@ class RaftVisualization {
      * Draw message animations
      */
     drawMessages() {
-        this.messages.forEach(message => {
+        // Debug: Track message rendering (reduced logging)
+        if (this.messages.length > 10 && this.frameCount % 120 === 0) { // Log every 2 seconds when many messages
+            console.warn('🎨 HIGH MESSAGE COUNT:', this.messages.length, 'active messages');
+        }
+        
+        this.messages.forEach((message, index) => {
+            
             const alpha = 1 - message.progress * 0.5; // Fade out as it travels
             let size = 8 + (1 - message.progress) * 4; // Shrink as it travels
             
@@ -889,6 +963,11 @@ class RaftVisualization {
         const color = this.colors[node.state] || this.colors.follower;
         const isActive = Date.now() - node.lastActivity < 2000; // Active in last 2 seconds
         
+        // CRITICAL DEBUG: Log leader nodes every render
+        if (node.state === 'leader') {
+            console.log(`👑 RENDER: Drawing leader Node ${node.id} with GREEN color ${color} (state: ${node.state})`);
+        }
+        
         // Debug: Log node position every 60 frames
         if (this.frameCount % 60 === 0) {
             const canvasInfo = {
@@ -937,6 +1016,10 @@ class RaftVisualization {
             
             // Draw state
             this.ctx.font = '10px Arial';
+            
+            // CRITICAL DEBUG: Always log what state we're about to draw
+            console.log(`🏷️ DRAWING LABEL: Node ${node.id} state = "${node.state}" (displaying "${node.state.toUpperCase()}")`);
+            
             this.ctx.fillText(node.state.toUpperCase(), node.x, node.y + 8);
             
             // Draw term
@@ -1117,6 +1200,18 @@ class RaftVisualization {
                 showNodeLabels: this.showNodeLabels
             }
         };
+    }
+
+    /**
+     * Clear message backlog (for debugging)
+     */
+    clearMessageBacklog() {
+        console.log('🧹 Clearing message backlog:', this.messages.length, 'messages');
+        this.messages = [];
+        if (this.recentMessages) {
+            this.recentMessages.clear();
+        }
+        console.log('✅ Message backlog cleared');
     }
 }
 

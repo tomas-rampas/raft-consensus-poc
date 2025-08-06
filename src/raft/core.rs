@@ -201,7 +201,7 @@ impl Node {
             election_timeout: Instant::now(),
             election_timeout_duration: Duration::from_millis(0),
             last_heartbeat_time: Instant::now(),
-            heartbeat_interval: Duration::from_millis(50), // 50ms heartbeat interval
+            heartbeat_interval: Duration::from_millis(200), // 200ms heartbeat interval - reduced replication message frequency
             votes_received: 0,
             simulated_failure_until: None,
         };
@@ -211,10 +211,10 @@ impl Node {
         node
     }
 
-    /// Resets the election timeout to a random value between 150-300ms
+    /// Resets the election timeout to a random value between 300-500ms
     pub fn reset_election_timer(&mut self) {
         let mut rng = rand::thread_rng();
-        let timeout_ms = rng.gen_range(150..=300);
+        let timeout_ms = rng.gen_range(300..=500);
         self.election_timeout_duration = Duration::from_millis(timeout_ms);
         self.election_timeout = Instant::now() + self.election_timeout_duration;
     }

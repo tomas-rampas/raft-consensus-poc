@@ -111,6 +111,9 @@
                             <label>
                                 <input type="checkbox" id="showHeartbeatEvents" checked> Show Heartbeats
                             </label>
+                            <label>
+                                <input type="checkbox" id="showReplicationEvents" checked> Show Replication/ACK
+                            </label>
                             <button id="timelineClearBtn" class="btn btn-small">Clear</button>
                         </div>
                     </div>
@@ -123,10 +126,10 @@
     </div>
 
     <!-- Scripts with cache busting -->
-    <script src="websocket.js?v=36"></script>
-    <script src="visualization.js?v=36"></script>
-    <script src="dashboard.js?v=36"></script>
-    <script src="app.js?v=36"></script>
+    <script src="websocket.js?v=37"></script>
+    <script src="visualization.js?v=37"></script>
+    <script src="dashboard.js?v=37"></script>
+    <script src="app.js?v=37"></script>
     
     <!-- Debug script to test immediate DOM access -->
     <script>
@@ -255,7 +258,7 @@
             console.log('✅ Test nodes drawn - check visualization area!');
         };
         
-        // Auto-submit test command after 5 seconds
+        // Auto-submit test command after 30 seconds (reduced frequency)
         setTimeout(() => {
             if (window.app && window.app.wsManager && window.app.wsManager.isConnected) {
                 console.log('🧪 Auto-submitting test command...');
@@ -264,7 +267,7 @@
                     command: 'test_command_' + Date.now()
                 });
             }
-        }, 5000);
+        }, 30000);
     </script>
 </body>
 </html>

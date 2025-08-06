@@ -337,21 +337,95 @@ impl RaftEvent {
 #[derive(Debug, Clone)]
 pub struct EventBroadcaster {
     sender: tokio::sync::broadcast::Sender<RaftEvent>,
+    /// Recent events for deduplication (event_key -> timestamp)
+    recent_events: std::sync::Arc<std::sync::RwLock<std::collections::HashMap<String, u64>>>,
 }
 
 impl EventBroadcaster {
     /// Creates a new event broadcaster with specified channel capacity
     pub fn new(capacity: usize) -> (Self, tokio::sync::broadcast::Receiver<RaftEvent>) {
         let (sender, receiver) = tokio::sync::broadcast::channel(capacity);
-        (Self { sender }, receiver)
+        (
+            Self {
+                sender,
+                recent_events: std::sync::Arc::new(std::sync::RwLock::new(
+                    std::collections::HashMap::new(),
+                )),
+            },
+            receiver,
+        )
     }
 
-    /// Broadcasts an event to all subscribers
+    /// Broadcasts an event to all subscribers with deduplication
     pub fn emit(
         &self,
         event: RaftEvent,
     ) -> Result<usize, tokio::sync::broadcast::error::SendError<RaftEvent>> {
+        // Create deduplication key based on event type, node, and timing
+        let event_key = self.create_event_key(&event);
+        let now = event.timestamp;
+
+        // Check for recent duplicates (within 100ms window)
+        if let Ok(recent_events) = self.recent_events.read() {
+            if let Some(&last_timestamp) = recent_events.get(&event_key) {
+                if now.saturating_sub(last_timestamp) < 100 {
+                    // Skip duplicate event within time window
+                    return Ok(0); // Return 0 to indicate no emission
+                }
+            }
+        }
+
+        // Update recent events tracking
+        if let Ok(mut recent_events) = self.recent_events.write() {
+            // Clean old events (older than 1 second)
+            recent_events.retain(|_, &mut timestamp| now.saturating_sub(timestamp) < 1000);
+            recent_events.insert(event_key, now);
+        }
+
+        // Emit the event
         self.sender.send(event)
+    }
+
+    /// Creates a deduplication key for an event
+    fn create_event_key(&self, event: &RaftEvent) -> String {
+        use std::fmt::Write;
+        let mut key = String::new();
+
+        // Include event type in key
+        match &event.event_type {
+            RaftEventType::MessageSent {
+                from,
+                to,
+                message_type,
+                ..
+            } => {
+                write!(&mut key, "MessageSent:{}:{}:{}", from, to, message_type).ok();
+            }
+            RaftEventType::HeartbeatSent { leader_id, .. } => {
+                write!(&mut key, "HeartbeatSent:{}", leader_id).ok();
+            }
+            RaftEventType::StateChange {
+                from_state,
+                to_state,
+                ..
+            } => {
+                write!(
+                    &mut key,
+                    "StateChange:{}:{:?}:{:?}",
+                    event.node_id, from_state, to_state
+                )
+                .ok();
+            }
+            RaftEventType::LeaderElected { leader_id, .. } => {
+                write!(&mut key, "LeaderElected:{}", leader_id).ok();
+            }
+            _ => {
+                // For other events, use simple node_id + event type
+                write!(&mut key, "{:?}:{}", event.event_type, event.node_id).ok();
+            }
+        }
+
+        key
     }
 
     /// Creates a new subscriber to the event stream
@@ -363,6 +437,28 @@ impl EventBroadcaster {
     pub fn receiver_count(&self) -> usize {
         self.sender.receiver_count()
     }
+
+    /// Returns statistics about event emission and deduplication
+    pub fn get_stats(&self) -> EventBroadcasterStats {
+        if let Ok(recent_events) = self.recent_events.read() {
+            EventBroadcasterStats {
+                active_event_types: recent_events.len(),
+                subscribers: self.receiver_count(),
+            }
+        } else {
+            EventBroadcasterStats {
+                active_event_types: 0,
+                subscribers: self.receiver_count(),
+            }
+        }
+    }
+}
+
+/// Statistics for the EventBroadcaster
+#[derive(Debug, Clone)]
+pub struct EventBroadcasterStats {
+    pub active_event_types: usize,
+    pub subscribers: usize,
 }
 
 #[cfg(test)]
@@ -417,5 +513,109 @@ mod tests {
 
         assert_eq!(event.node_id, deserialized.node_id);
         assert_eq!(event.term, deserialized.term);
+    }
+
+    #[test]
+    fn test_event_deduplication() {
+        let (broadcaster, mut receiver) = EventBroadcaster::new(100);
+
+        // Create identical events with same timestamp
+        let timestamp = 123456789;
+        let event1 = RaftEvent {
+            id: 1,
+            timestamp,
+            node_id: 0,
+            term: 1,
+            event_type: RaftEventType::MessageSent {
+                from: 0,
+                to: 1,
+                message_type: "AppendEntriesRequest".to_string(),
+                message_details: "Test".to_string(),
+            },
+        };
+
+        let event2 = RaftEvent {
+            id: 2,
+            timestamp, // Same timestamp
+            node_id: 0,
+            term: 1,
+            event_type: RaftEventType::MessageSent {
+                from: 0,
+                to: 1,
+                message_type: "AppendEntriesRequest".to_string(),
+                message_details: "Test".to_string(),
+            },
+        };
+
+        // First event should be emitted
+        let result1 = broadcaster.emit(event1);
+        assert!(result1.is_ok());
+        assert_eq!(result1.unwrap(), 1); // 1 receiver got the event
+
+        // Second identical event should be deduplicated
+        let result2 = broadcaster.emit(event2);
+        assert!(result2.is_ok());
+        assert_eq!(result2.unwrap(), 0); // 0 receivers (deduplicated)
+
+        // Only one event should be received
+        let received_event = receiver.try_recv().unwrap();
+        assert_eq!(received_event.id, 1);
+
+        // No more events should be available
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_event_deduplication_time_window() {
+        let (broadcaster, mut receiver) = EventBroadcaster::new(100);
+
+        // Create events with different timestamps (outside dedup window)
+        let timestamp1 = 123456789;
+        let timestamp2 = timestamp1 + 200; // 200ms later (outside 100ms window)
+
+        let event1 = RaftEvent {
+            id: 1,
+            timestamp: timestamp1,
+            node_id: 0,
+            term: 1,
+            event_type: RaftEventType::MessageSent {
+                from: 0,
+                to: 1,
+                message_type: "AppendEntriesRequest".to_string(),
+                message_details: "Test".to_string(),
+            },
+        };
+
+        let event2 = RaftEvent {
+            id: 2,
+            timestamp: timestamp2,
+            node_id: 0,
+            term: 1,
+            event_type: RaftEventType::MessageSent {
+                from: 0,
+                to: 1,
+                message_type: "AppendEntriesRequest".to_string(),
+                message_details: "Test".to_string(),
+            },
+        };
+
+        // Both events should be emitted (outside dedup window)
+        let result1 = broadcaster.emit(event1);
+        assert!(result1.is_ok());
+        assert_eq!(result1.unwrap(), 1);
+
+        let result2 = broadcaster.emit(event2);
+        assert!(result2.is_ok());
+        assert_eq!(result2.unwrap(), 1);
+
+        // Both events should be received
+        let received_event1 = receiver.try_recv().unwrap();
+        assert_eq!(received_event1.id, 1);
+
+        let received_event2 = receiver.try_recv().unwrap();
+        assert_eq!(received_event2.id, 2);
+
+        // No more events should be available
+        assert!(receiver.try_recv().is_err());
     }
 }

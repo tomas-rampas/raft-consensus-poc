@@ -73,12 +73,26 @@ class WebSocketManager {
                 const data = JSON.parse(event.data);
                 console.log('📨 Received WebSocket message:', data);
                 
+                // CRITICAL DEBUG: Look specifically for leader events
+                const eventType = typeof data.event_type === 'string' ? data.event_type : data.event_type?.type;
+                if (eventType === 'LeaderElected' || eventType === 'StateChange') {
+                    console.log('👑 LEADER EVENT DETECTED:', {
+                        eventType,
+                        nodeId: data.node_id,
+                        eventData: data.event_type,
+                        fullMessage: data
+                    });
+                }
+                
                 // Debug: Count HeartbeatSent events
                 if (data.event_type && 
                     (typeof data.event_type === 'object' && data.event_type.type === 'HeartbeatSent' ||
                      typeof data.event_type === 'string' && data.event_type === 'HeartbeatSent')) {
                     console.log(`💓 WebSocket received heartbeat from Node ${data.node_id}`);
                 }
+                
+                // Process events normally through the event routing system
+                // No direct manipulation needed - let the app handle events properly
                 
                 // Route message based on type
                 if (data.type) {
