@@ -4,6 +4,17 @@ use crate::raft::rpc::{
 };
 use tracing::{debug, info, trace};
 
+/// Information about consensus ACKs that occurred during AppendEntries response handling
+#[derive(Debug)]
+pub struct ConsensusAckInfo {
+    pub follower_id: NodeId,
+    pub proposal_index: u64,
+    pub proposal_term: u64,
+    pub acks_received: usize,
+    pub acks_needed: usize,
+    pub consensus_achieved: bool,
+}
+
 impl Node {
     /// Handles an AppendEntries RPC request from a leader
     /// Returns the appropriate response and updates node state as needed
@@ -64,6 +75,9 @@ impl Node {
             );
             self.state = NodeState::Follower;
         }
+
+        // Update our knowledge of current leader
+        self.current_leader_id = Some(request.leader_id);
 
         // Check log consistency - if prev_log_index is beyond our log, reject
         if request.prev_log_index > 0 && request.prev_log_index > self.last_log_index() {
@@ -152,6 +166,7 @@ impl Node {
             self.persistent_state.current_term + 1
         );
         self.state = NodeState::Candidate;
+        self.current_leader_id = None; // Clear leader knowledge - election in progress
         self.persistent_state.current_term += 1;
         self.persistent_state.voted_for = Some(self.id);
         self.votes_received = 1; // Vote for self
@@ -213,6 +228,7 @@ impl Node {
             "👑 Became LEADER for term {} with majority votes!", self.persistent_state.current_term
         );
         self.state = NodeState::Leader;
+        self.current_leader_id = Some(self.id); // I am the leader now
         self.leader_state = Some(LeaderVolatileState::new(
             self.cluster_size,
             self.last_log_index(),
@@ -390,13 +406,14 @@ impl Node {
     }
 
     /// Handles AppendEntries response from a follower (only relevant for leaders)
+    /// Returns information about any consensus ACKs that were processed
     pub fn handle_append_entries_response(
         &mut self,
         follower_id: NodeId,
         response: &AppendEntriesResponse,
-    ) {
+    ) -> Vec<ConsensusAckInfo> {
         if !matches!(self.state, NodeState::Leader) || follower_id >= self.cluster_size {
-            return;
+            return Vec::new();
         }
 
         // If response term is higher, step down
@@ -405,12 +422,12 @@ impl Node {
             self.persistent_state.voted_for = None;
             self.state = NodeState::Follower;
             self.leader_state = None;
-            return;
+            return Vec::new();
         }
 
         // Ignore stale responses
         if response.term < self.persistent_state.current_term {
-            return;
+            return Vec::new();
         }
 
         if response.success {
@@ -442,11 +459,14 @@ impl Node {
                 .cloned()
                 .collect();
 
+            let mut consensus_acks = Vec::new();
+
             for proposed_index in proposals_to_ack {
                 if let Some(proposal) = leader_state.pending_proposals.get_mut(&proposed_index) {
                     proposal.add_acknowledgment(follower_id);
                     let acks_received = proposal.acknowledgments.len();
                     let acks_needed = (self.cluster_size / 2) + 1;
+                    let consensus_achieved = acks_received >= acks_needed;
 
                     info!(
                         node_id = self.id,
@@ -455,22 +475,35 @@ impl Node {
                         proposed_index,
                         acks_received,
                         acks_needed,
-                        if acks_received >= acks_needed {
+                        if consensus_achieved {
                             "CONSENSUS ACHIEVED!"
                         } else {
                             "waiting for more..."
                         }
                     );
+
+                    // Collect consensus ACK info for event emission
+                    consensus_acks.push(ConsensusAckInfo {
+                        follower_id,
+                        proposal_index: proposed_index,
+                        proposal_term: proposal.term,
+                        acks_received,
+                        acks_needed,
+                        consensus_achieved,
+                    });
                 }
             }
 
             // Try to advance commit index and commit ready proposals
             self.try_advance_commit_index();
+
+            consensus_acks
         } else {
             // Failure - decrement next_index and retry
             let leader_state = self.leader_state.as_mut().unwrap();
             leader_state.next_index[follower_id] =
                 leader_state.next_index[follower_id].saturating_sub(1);
+            Vec::new()
         }
     }
 

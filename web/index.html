@@ -3,271 +3,183 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Raft Consensus Algorithm - Real-time Visualization</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>Raft Protocol - Clean Visualization</title>
+    <link rel="stylesheet" href="clean-styles.css">
 </head>
 <body>
     <div id="app">
         <!-- Header -->
         <header class="header">
-            <h1>🗳️ Raft Consensus Algorithm</h1>
-            <p>Real-time cluster visualization</p>
-            <div class="connection-status" id="connectionStatus">
-                <span class="status-indicator" id="statusIndicator"></span>
-                <span id="connectionText">Connecting...</span>
+            <div class="header-content">
+                <h1>🗳️ Raft Consensus Protocol</h1>
+                <p>Interactive visualization of three core communication patterns</p>
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="connectionText">Connecting...</span>
+                </div>
             </div>
         </header>
 
-        <!-- Main Dashboard -->
-        <main class="main-content">
-            <!-- Top Row: Cluster Visualization and Control+Stats Panel side by side -->
-            <div class="top-row">
-                <!-- Cluster Visualization -->
-                <section class="visualization-panel">
-                    <div class="panel-header">
-                        <h2>🖥️ Cluster Visualization</h2>
-                        <div class="viz-controls">
-                            <label>
-                                <input type="checkbox" id="showHeartbeats" checked> Show Heartbeats
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Communication Controls -->
+            <section class="communication-section">
+                <h2>Communication Types</h2>
+                <div class="communication-grid">
+                    <div class="comm-card election">
+                        <div class="comm-header">
+                            <span class="comm-icon">🗳️</span>
+                            <h3>Elections</h3>
+                        </div>
+                        <p class="comm-desc">Leader election process, vote requests and responses</p>
+                        <div class="comm-controls">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="showElections" checked>
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Show Elections</span>
                             </label>
-                            <label>
-                                <input type="checkbox" id="showMessages" checked> Show Messages
-                            </label>
+                            <div class="comm-stats">
+                                <span class="stat-value" id="electionCount">0</span>
+                                <span class="stat-label">messages</span>
+                            </div>
                         </div>
                     </div>
-                    <div class="canvas-container">
-                        <canvas id="clusterCanvas" width="600" height="350"></canvas>
+
+                    <div class="comm-card proposal">
+                        <div class="comm-header">
+                            <span class="comm-icon">📝</span>
+                            <h3>Proposals</h3>
+                        </div>
+                        <p class="comm-desc">Client commands, consensus operations, and acknowledgments</p>
+                        <div class="comm-controls">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="showProposals" checked>
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Show Proposals</span>
+                            </label>
+                            <div class="comm-stats">
+                                <span class="stat-value" id="proposalCount">0</span>
+                                <span class="stat-label">messages</span>
+                            </div>
+                        </div>
                     </div>
-                </section>
 
-                <!-- Right Column: Control Panel + Statistics -->
-                <div class="right-column">
-                    <!-- Control Panel -->
-                    <section class="control-panel">
-                        <div class="panel-header">
-                            <h2>🎮 Control Panel</h2>
+                    <div class="comm-card heartbeat">
+                        <div class="comm-header">
+                            <span class="comm-icon">💓</span>
+                            <h3>Heartbeats</h3>
                         </div>
-                        <div class="controls">
-                            <div class="control-group">
-                                <label for="commandInput">Submit Command:</label>
-                                <div class="input-group">
-                                    <input type="text" id="commandInput" placeholder="Enter command..." />
-                                    <button id="submitBtn" class="btn btn-primary btn-icon" title="Submit Command">📝</button>
-                                </div>
-                            </div>
-                            <div class="control-group">
-                                <button id="pauseBtn" class="btn btn-secondary">⏸️ Pause</button>
-                                <button id="clearBtn" class="btn btn-secondary">🧹 Clear</button>
-                                <button id="resetBtn" class="btn btn-danger">🔄 Reset</button>
-                                <button id="changeLeaderBtn" class="btn btn-warning">👑 Change Leader</button>
+                        <p class="comm-desc">Regular maintenance messages and leadership confirmation</p>
+                        <div class="comm-controls">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="showHeartbeats" checked>
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Show Heartbeats</span>
+                            </label>
+                            <div class="comm-stats">
+                                <span class="stat-value" id="heartbeatCount">0</span>
+                                <span class="stat-label">messages</span>
                             </div>
                         </div>
-                    </section>
-
-                    <!-- Statistics Panel -->
-                    <section class="stats-panel">
-                        <div class="panel-header">
-                            <h2>📈 Statistics</h2>
-                        </div>
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <h3>Total Messages</h3>
-                                <span id="totalMessages" class="stat-value">0</span>
-                            </div>
-                            <div class="stat-card">
-                                <h3>Leader Elections</h3>
-                                <span id="leaderElections" class="stat-value">0</span>
-                            </div>
-                            <div class="stat-card">
-                                <h3>Log Entries</h3>
-                                <span id="logEntries" class="stat-value">0</span>
-                            </div>
-                            <div class="stat-card">
-                                <h3>Current Term</h3>
-                                <span id="currentTerm" class="stat-value">0</span>
-                            </div>
-                        </div>
-                    </section>
+                    </div>
                 </div>
-            </div>
+            </section>
 
-            <!-- Bottom Row: Node Information and Event Timeline side by side -->
-            <div class="bottom-row">
-                <!-- Node Information Panel -->
-                <section class="nodes-panel">
-                    <div class="panel-header">
-                        <h2>📊 Node Information</h2>
+            <!-- Visualization -->
+            <section class="visualization-section">
+                <div class="viz-header">
+                    <h2>Cluster Visualization</h2>
+                    <div class="viz-controls">
+                        <button id="pauseBtn" class="control-btn secondary">
+                            <span class="btn-icon">⏸️</span>
+                            <span class="btn-text">Pause</span>
+                        </button>
+                        <button id="clearBtn" class="control-btn secondary">
+                            <span class="btn-icon">🧹</span>
+                            <span class="btn-text">Clear</span>
+                        </button>
                     </div>
-                    <div id="nodesList" class="nodes-list">
-                        <!-- Node cards will be dynamically populated -->
+                </div>
+                <div class="canvas-wrapper">
+                    <canvas id="clusterCanvas" width="800" height="500"></canvas>
+                    <div class="canvas-overlay" id="canvasOverlay">
+                        <div class="overlay-message">
+                            <span class="overlay-icon">🔄</span>
+                            <span class="overlay-text">Connecting to cluster...</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Actions and Cluster Info -->
+            <div class="bottom-section">
+                <!-- Actions Panel -->
+                <section class="actions-section">
+                    <h2>Actions</h2>
+                    <div class="actions-grid">
+                        <div class="action-card">
+                            <h3>Submit Proposal</h3>
+                            <div class="action-form">
+                                <input type="text" id="commandInput" placeholder="Enter your command..." class="command-input">
+                                <button id="submitBtn" class="action-btn primary">
+                                    <span class="btn-icon">📤</span>
+                                    <span class="btn-text">Submit</span>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="action-card">
+                            <h3>Trigger Election</h3>
+                            <div class="action-form">
+                                <p class="action-desc">Manually trigger a leader election</p>
+                                <button id="triggerElectionBtn" class="action-btn warning">
+                                    <span class="btn-icon">🗳️</span>
+                                    <span class="btn-text">Start Election</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
-                <!-- Event Timeline -->
-                <section class="timeline-panel">
-                    <div class="panel-header">
-                        <h2>⏰ Event Timeline</h2>
-                        <div class="timeline-controls">
-                            <label>
-                                <input type="checkbox" id="showHeartbeatEvents" checked> Show Heartbeats
-                            </label>
-                            <label>
-                                <input type="checkbox" id="showReplicationEvents" checked> Show Replication/ACK
-                            </label>
-                            <button id="timelineClearBtn" class="btn btn-small">Clear</button>
+                <!-- Cluster Info -->
+                <section class="cluster-info-section">
+                    <h2>Cluster Information</h2>
+                    <div class="cluster-stats">
+                        <div class="cluster-stat">
+                            <span class="stat-icon">📊</span>
+                            <div class="stat-details">
+                                <span class="stat-value" id="currentTerm">0</span>
+                                <span class="stat-label">Current Term</span>
+                            </div>
+                        </div>
+                        <div class="cluster-stat">
+                            <span class="stat-icon">👑</span>
+                            <div class="stat-details">
+                                <span class="stat-value" id="currentLeader">-</span>
+                                <span class="stat-label">Current Leader</span>
+                            </div>
+                        </div>
+                        <div class="cluster-stat">
+                            <span class="stat-icon">🌐</span>
+                            <div class="stat-details">
+                                <span class="stat-value" id="activeNodes">0</span>
+                                <span class="stat-label">Active Nodes</span>
+                            </div>
                         </div>
                     </div>
-                    <div id="eventTimeline" class="timeline">
-                        <!-- Timeline events will be dynamically populated -->
+                    
+                    <div class="nodes-grid" id="nodesGrid">
+                        <!-- Node cards will be populated here -->
                     </div>
                 </section>
             </div>
         </main>
     </div>
 
-    <!-- Scripts with cache busting -->
-    <script src="websocket.js?v=37"></script>
-    <script src="visualization.js?v=37"></script>
-    <script src="dashboard.js?v=37"></script>
-    <script src="app.js?v=37"></script>
-    
-    <!-- Debug script to test immediate DOM access -->
-    <script>
-        console.log('🔍 DOM Ready Test - Checking elements immediately:');
-        console.log('totalMessages:', document.getElementById('totalMessages'));
-        console.log('leaderElections:', document.getElementById('leaderElections'));
-        console.log('logEntries:', document.getElementById('logEntries'));
-        console.log('currentTerm:', document.getElementById('currentTerm'));
-        console.log('nodesList:', document.getElementById('nodesList'));
-        
-        // Check canvas element
-        const canvas = document.getElementById('clusterCanvas');
-        console.log('🎨 Canvas element:', canvas);
-        if (canvas) {
-            console.log('Canvas details:', {
-                width: canvas.width,
-                height: canvas.height,
-                clientWidth: canvas.clientWidth,
-                clientHeight: canvas.clientHeight,
-                offsetWidth: canvas.offsetWidth,
-                offsetHeight: canvas.offsetHeight,
-                style: canvas.style.cssText
-            });
-        }
-        
-        // Test immediate DOM update
-        const testElement = document.getElementById('totalMessages');
-        if (testElement) {
-            testElement.textContent = 'TEST_VALUE';
-            console.log('✅ Immediate DOM update test - set totalMessages to TEST_VALUE');
-        } else {
-            console.log('❌ Immediate DOM update test - totalMessages not found');
-        }
-        
-        // Global canvas test function 
-        window.testCanvasManually = function() {
-            console.log('🧪 Manual Canvas Test Started...');
-            const canvas = document.getElementById('clusterCanvas');
-            if (!canvas) {
-                console.error('❌ Canvas element not found!');
-                return;
-            }
-            
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                console.error('❌ Canvas context not found!');
-                return;
-            }
-            
-            try {
-                // Clear entire canvas
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                
-                // Set a white background so we can see something
-                ctx.fillStyle = 'white';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                
-                // Draw test shapes
-                ctx.fillStyle = 'red';
-                ctx.fillRect(50, 50, 100, 100);
-                
-                ctx.fillStyle = 'blue';
-                ctx.fillRect(200, 50, 100, 100);
-                
-                ctx.fillStyle = 'green';
-                ctx.beginPath();
-                ctx.arc(400, 100, 50, 0, 2 * Math.PI);
-                ctx.fill();
-                
-                // Add text
-                ctx.fillStyle = 'black';
-                ctx.font = '20px Arial';
-                ctx.fillText('MANUAL CANVAS TEST - SUCCESS!', 50, 200);
-                
-                console.log('✅ Manual canvas test completed - check for shapes!');
-                
-            } catch (error) {
-                console.error('❌ Manual canvas test failed:', error);
-            }
-        };
-        
-        // Test drawing nodes at fixed positions
-        window.testDrawNodes = function() {
-            console.log('🧪 Testing node drawing at fixed positions...');
-            const canvas = document.getElementById('clusterCanvas');
-            const ctx = canvas.getContext('2d');
-            
-            // Clear canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // Draw white background
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Draw 5 nodes in a circle pattern like the real system
-            const centerX = canvas.clientWidth / 2;
-            const centerY = canvas.clientHeight / 2;
-            const radius = 150;
-            
-            for (let i = 0; i < 5; i++) {
-                const angle = (i / 5) * 2 * Math.PI - Math.PI / 2;
-                const x = centerX + Math.cos(angle) * radius;
-                const y = centerY + Math.sin(angle) * radius;
-                
-                // Draw node circle
-                ctx.fillStyle = '#74c0fc'; // follower blue
-                ctx.beginPath();
-                ctx.arc(x, y, 40, 0, 2 * Math.PI);
-                ctx.fill();
-                
-                // Draw node border
-                ctx.strokeStyle = '#333';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-                
-                // Draw node label
-                ctx.fillStyle = 'black';
-                ctx.font = 'bold 14px Arial';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(`Node ${i}`, x, y);
-                
-                console.log(`Node ${i} drawn at (${x}, ${y})`);
-            }
-            
-            console.log('✅ Test nodes drawn - check visualization area!');
-        };
-        
-        // Auto-submit test command after 30 seconds (reduced frequency)
-        setTimeout(() => {
-            if (window.app && window.app.wsManager && window.app.wsManager.isConnected) {
-                console.log('🧪 Auto-submitting test command...');
-                window.app.wsManager.send({
-                    type: 'submit_command',
-                    command: 'test_command_' + Date.now()
-                });
-            }
-        }, 30000);
-    </script>
+    <!-- Scripts -->
+    <script src="websocket-manager.js"></script>
+    <script src="raft-message-classifier.js"></script>
+    <script src="raft-visualization-v2.js"></script>
+    <script src="clean-app.js"></script>
 </body>
 </html>

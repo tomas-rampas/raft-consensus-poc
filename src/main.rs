@@ -100,14 +100,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             let command = parts[1..].join(" ");
 
-                            // Try to submit to each node (only leader will accept)
+                            // Try to submit to node 0 first, then try others as fallback
                             let mut submitted = false;
-                            for node_id in 0..cluster_size {
-                                let message =
-                                    RpcMessage::client_command(999, node_id, command.clone());
-                                if cluster_channels.send_to_node(node_id, message).is_ok() {
-                                    submitted = true;
-                                    // Don't break - send to all nodes since we don't know which is leader
+                            let message = RpcMessage::client_command(999, 0, command.clone());
+                            if cluster_channels.send_to_node(0, message).is_ok() {
+                                submitted = true;
+                            } else {
+                                // If node 0 fails, try other nodes as fallback
+                                for node_id in 1..cluster_size {
+                                    let message =
+                                        RpcMessage::client_command(999, node_id, command.clone());
+                                    if cluster_channels.send_to_node(node_id, message).is_ok() {
+                                        submitted = true;
+                                        break; // Only submit to one node
+                                    }
                                 }
                             }
 

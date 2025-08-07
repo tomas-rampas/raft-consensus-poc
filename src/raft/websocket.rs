@@ -273,26 +273,16 @@ async fn handle_client_command(
                 // Client wants to submit a command to the cluster
                 if let Some(command_text) = command.get("command").and_then(|v| v.as_str()) {
                     if let Some(cluster_channels) = cluster_channels {
-                        // Submit to node 0 first (it will either handle it as leader or be forwarded)
-                        // This prevents duplicate rejection events from all nodes
+                        // Try to send to any available node - let Raft forwarding handle leader detection
                         let mut submitted = false;
-                        let message = RpcMessage::client_command(999, 0, command_text.to_string());
-                        if cluster_channels.send_to_node(0, message).is_ok() {
-                            submitted = true;
-                        }
 
-                        // If node 0 fails to receive, try other nodes as fallback
-                        if !submitted {
-                            for node_id in 1..cluster_channels.cluster_size {
-                                let message = RpcMessage::client_command(
-                                    999,
-                                    node_id,
-                                    command_text.to_string(),
-                                );
-                                if cluster_channels.send_to_node(node_id, message).is_ok() {
-                                    submitted = true;
-                                    break; // Only try until one succeeds
-                                }
+                        // Try all nodes in order (no randomization needed to avoid thread safety issues)
+                        for node_id in 0..cluster_channels.cluster_size {
+                            let message =
+                                RpcMessage::client_command(999, node_id, command_text.to_string());
+                            if cluster_channels.send_to_node(node_id, message).is_ok() {
+                                submitted = true;
+                                break; // Stop after first successful submission
                             }
                         }
 
@@ -330,6 +320,58 @@ async fn handle_client_command(
                         "type": "command_submitted",
                         "success": false,
                         "error": "Missing command parameter",
+                        "timestamp": chrono::Utc::now().timestamp_millis()
+                    });
+                    ws_sender.send(Message::Text(response.to_string())).await?;
+                }
+            }
+            "trigger_election" => {
+                // Client wants to manually trigger an election
+                info!("🗳️ WebSocket client requested manual election trigger");
+
+                if let Some(cluster_channels) = cluster_channels {
+                    // For a proper manual election:
+                    // 1. First force the current leader to step down 
+                    // 2. Then trigger election on a different node
+                    
+                    // Send leader step-down command to ALL nodes (leader will respond)
+                    let step_down_message = RpcMessage::client_command(
+                        999,
+                        0, // Doesn't matter which node, we'll broadcast
+                        "FORCE_LEADER_STEP_DOWN".to_string(),
+                    );
+                    
+                    let mut step_down_sent = false;
+                    for node_id in 0..cluster_channels.cluster_size {
+                        if cluster_channels.send_to_node(node_id, step_down_message.clone()).is_ok() {
+                            step_down_sent = true;
+                        }
+                    }
+
+                    if step_down_sent {
+                        let response = serde_json::json!({
+                            "type": "election_triggered",
+                            "success": true,
+                            "message": "Manual election triggered - leader stepping down",
+                            "method": "leader_step_down",
+                            "timestamp": chrono::Utc::now().timestamp_millis()
+                        });
+                        ws_sender.send(Message::Text(response.to_string())).await?;
+                        info!("✅ Manual election triggered - sent leader step-down to cluster");
+                    } else {
+                        let response = serde_json::json!({
+                            "type": "election_triggered",
+                            "success": false,
+                            "error": "Failed to send trigger to node",
+                            "timestamp": chrono::Utc::now().timestamp_millis()
+                        });
+                        ws_sender.send(Message::Text(response.to_string())).await?;
+                    }
+                } else {
+                    let response = serde_json::json!({
+                        "type": "election_triggered",
+                        "success": false,
+                        "error": "Cluster channels not available",
                         "timestamp": chrono::Utc::now().timestamp_millis()
                     });
                     ws_sender.send(Message::Text(response.to_string())).await?;
@@ -374,20 +416,23 @@ async fn handle_client_command(
                 // Client wants to query current cluster state
                 // This is used to determine the current leader when connecting late
                 info!("🔍 Client requesting current cluster state");
-                
+
                 if let Some(cluster_channels) = cluster_channels {
                     // Send query to all nodes - the leader will respond with proper status
                     let mut query_sent = false;
                     for node_id in 0..cluster_channels.cluster_size {
-                        let query_msg = RpcMessage::client_command(999, node_id, "QUERY_STATUS".to_string());
+                        let query_msg =
+                            RpcMessage::client_command(999, node_id, "QUERY_STATUS".to_string());
                         if cluster_channels.send_to_node(node_id, query_msg).is_ok() {
                             query_sent = true;
                         }
                     }
-                    
+
                     if query_sent {
-                        info!("📤 Sent status queries to cluster nodes - leader will emit current status");
-                        
+                        info!(
+                            "📤 Sent status queries to cluster nodes - leader will emit current status"
+                        );
+
                         // Send acknowledgment that query was initiated
                         let response = serde_json::json!({
                             "type": "cluster_state_query_initiated",
@@ -398,7 +443,7 @@ async fn handle_client_command(
                     } else {
                         // Fallback: send basic cluster info without leader
                         let cluster_status = serde_json::json!({
-                            "type": "ClusterStatus", 
+                            "type": "ClusterStatus",
                             "total_nodes": cluster_channels.cluster_size,
                             "active_nodes": cluster_channels.cluster_size,
                             "leader_id": null,
@@ -406,7 +451,9 @@ async fn handle_client_command(
                             "message": "Cluster not responding to status query",
                             "timestamp": chrono::Utc::now().timestamp_millis()
                         });
-                        ws_sender.send(Message::Text(cluster_status.to_string())).await?;
+                        ws_sender
+                            .send(Message::Text(cluster_status.to_string()))
+                            .await?;
                     }
                 } else {
                     // No cluster available
@@ -434,6 +481,14 @@ async fn send_event_to_client(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Serialize the event to JSON
     let json_event = serde_json::to_string(event)?;
+
+    // Debug log for important events
+    if json_event.contains("LogEntryProposed")
+        || json_event.contains("ConsensusAckReceived")
+        || json_event.contains("ClientCommandReceived")
+    {
+        info!("📤 WS Sending key event: {}", json_event);
+    }
 
     // Send as WebSocket text message
     ws_sender.send(Message::Text(json_event)).await?;

@@ -151,6 +151,27 @@ pub enum RaftEventType {
         commit_index: u64,
     },
 
+
+
+    ReplicationCompleted {
+        leader_id: NodeId,
+        committed_indices: Vec<u64>,
+        acknowledged_by: Vec<NodeId>,
+        consensus_term: u64,
+    },
+
+    /// Consensus-specific ACK events (distinct from heartbeat ACKs)
+    ConsensusAckReceived {
+        from_follower: NodeId,
+        to_leader: NodeId,
+        proposal_index: u64,
+        proposal_term: u64,
+        success: bool,
+        acks_received: usize,
+        acks_needed: usize,
+        consensus_achieved: bool,
+    },
+
     /// Client interaction events
     ClientCommandReceived {
         command: String,
@@ -315,6 +336,25 @@ impl RaftEvent {
         )
     }
 
+    /// Creates a heartbeat received event
+    pub fn heartbeat_received(
+        follower_id: NodeId,
+        leader_id: NodeId,
+        leader_term: u64,
+        commit_index: u64,
+    ) -> Self {
+        Self::new(
+            leader_id,
+            leader_term,
+            RaftEventType::HeartbeatReceived {
+                follower_id,
+                leader_id,
+                leader_term,
+                commit_index,
+            },
+        )
+    }
+
     /// Creates a client command received event
     pub fn client_command_received(
         node_id: NodeId,
@@ -328,6 +368,57 @@ impl RaftEvent {
             RaftEventType::ClientCommandReceived {
                 command,
                 accepted_by_leader,
+            },
+        )
+    }
+
+    /// Creates a log replication sent event
+
+    /// Creates a replication ACK received event
+
+    /// Creates a replication completed event
+    pub fn replication_completed(
+        leader_id: NodeId,
+        consensus_term: u64,
+        committed_indices: Vec<u64>,
+        acknowledged_by: Vec<NodeId>,
+    ) -> Self {
+        Self::new(
+            leader_id,
+            consensus_term,
+            RaftEventType::ReplicationCompleted {
+                leader_id,
+                committed_indices,
+                acknowledged_by,
+                consensus_term,
+            },
+        )
+    }
+
+    /// Creates a consensus ACK received event
+    pub fn consensus_ack_received(
+        from_follower: NodeId,
+        to_leader: NodeId,
+        term: u64,
+        proposal_index: u64,
+        proposal_term: u64,
+        success: bool,
+        acks_received: usize,
+        acks_needed: usize,
+        consensus_achieved: bool,
+    ) -> Self {
+        Self::new(
+            to_leader,
+            term,
+            RaftEventType::ConsensusAckReceived {
+                from_follower,
+                to_leader,
+                proposal_index,
+                proposal_term,
+                success,
+                acks_received,
+                acks_needed,
+                consensus_achieved,
             },
         )
     }
@@ -418,6 +509,32 @@ impl EventBroadcaster {
             }
             RaftEventType::LeaderElected { leader_id, .. } => {
                 write!(&mut key, "LeaderElected:{}", leader_id).ok();
+            }
+            RaftEventType::ReplicationCompleted {
+                leader_id,
+                consensus_term,
+                ..
+            } => {
+                write!(
+                    &mut key,
+                    "ReplicationCompleted:{}:{}",
+                    leader_id, consensus_term
+                )
+                .ok();
+            }
+            RaftEventType::ConsensusAckReceived {
+                from_follower,
+                to_leader,
+                proposal_index,
+                success,
+                ..
+            } => {
+                write!(
+                    &mut key,
+                    "ConsensusAck:{}:{}:{}:{}",
+                    from_follower, to_leader, proposal_index, success
+                )
+                .ok();
             }
             _ => {
                 // For other events, use simple node_id + event type

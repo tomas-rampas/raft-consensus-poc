@@ -102,7 +102,18 @@ class WebSocketManager {
                     const eventType = typeof data.event_type === 'string' ? data.event_type : data.event_type.type;
                     this.emit('raft_event', data);
                     if (eventType) {
-                        this.emit(`raft_${eventType.toLowerCase()}`, data);
+                        // Emit specific event handlers for new replication events
+                        const lowerEventType = eventType.toLowerCase();
+                        this.emit(`raft_${lowerEventType}`, data);
+                        
+                        // Additional routing for new event types
+                        if (lowerEventType === 'logreplicationsent') {
+                            this.emit('replication_sent', data);
+                        } else if (lowerEventType === 'replicationackreceived') {
+                            this.emit('replication_ack', data);
+                        } else if (lowerEventType === 'replicationcompleted') {
+                            this.emit('replication_completed', data);
+                        }
                     }
                 }
                 

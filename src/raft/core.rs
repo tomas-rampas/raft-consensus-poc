@@ -182,6 +182,8 @@ pub struct Node {
     pub last_heartbeat_time: Instant,
     /// Interval between heartbeats
     pub heartbeat_interval: Duration,
+    /// Current leader ID (None if unknown)
+    pub current_leader_id: Option<NodeId>,
     /// Current term for candidate vote tracking
     pub votes_received: usize,
     /// Temporary failure simulation - when Some, node is "failed" until this time
@@ -202,6 +204,7 @@ impl Node {
             election_timeout_duration: Duration::from_millis(0),
             last_heartbeat_time: Instant::now(),
             heartbeat_interval: Duration::from_millis(200), // 200ms heartbeat interval - reduced replication message frequency
+            current_leader_id: None,
             votes_received: 0,
             simulated_failure_until: None,
         };
@@ -211,10 +214,11 @@ impl Node {
         node
     }
 
-    /// Resets the election timeout to a random value between 300-500ms
+    /// Resets the election timeout to a random value between 2500-4000ms
+    /// Should be 5-8x longer than heartbeat interval (500ms) to prevent unnecessary elections
     pub fn reset_election_timer(&mut self) {
         let mut rng = rand::thread_rng();
-        let timeout_ms = rng.gen_range(300..=500);
+        let timeout_ms = rng.gen_range(2500..=4000);
         self.election_timeout_duration = Duration::from_millis(timeout_ms);
         self.election_timeout = Instant::now() + self.election_timeout_duration;
     }

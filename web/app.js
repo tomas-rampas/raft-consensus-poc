@@ -246,6 +246,19 @@ class RaftApp {
     handleWebSocketMessage(data) {
         console.log('📨 WebSocket message:', data);
         
+        // AGGRESSIVE DEBUGGING: Log specific events we care about
+        if (data.event_type && typeof data.event_type === 'object') {
+            if (data.event_type.LogEntryProposed) {
+                console.error('🚨🚨🚨 CRITICAL DEBUG: LogEntryProposed event received!', data);
+            }
+            if (data.event_type.ReplicationAckReceived) {
+                console.error('🚨🚨🚨 CRITICAL DEBUG: ReplicationAckReceived event received!', data);
+            }
+            if (data.event_type.ClientCommandReceived) {
+                console.error('🚨🚨🚨 CRITICAL DEBUG: ClientCommandReceived event received!', data);
+            }
+        }
+        
         // Determine if this is a RaftEvent format or connection message
         if (data.event_type) {
             // This is a RaftEvent format: { id, timestamp, node_id, term, event_type: {...} }
@@ -476,7 +489,7 @@ class RaftApp {
                 const leaderId = eventData?.leader_id || nodeId;
                 const followers = eventData?.followers || [];
                 
-                console.log('💓 Processing HeartbeatSent (ANIMATION + STATE UPDATE):', {
+                console.log('💓 Processing HeartbeatSent (SUBTLE PULSE ONLY):', {
                     leaderId,
                     followers,
                     eventData,
@@ -484,8 +497,7 @@ class RaftApp {
                 });
                 
                 if (leaderId !== undefined && followers.length > 0) {
-                    // CRITICAL FIX: Update the leader state in visualization
-                    // The leader node should be marked as "leader", not "follower"
+                    // Update leader state in visualization
                     const leaderNode = this.visualization.nodes.get(leaderId);
                     if (leaderNode && leaderNode.state !== 'leader') {
                         console.log(`👑 VISUALIZATION FIX: Node ${leaderId} sending heartbeats → updating to LEADER state`);
@@ -497,40 +509,179 @@ class RaftApp {
                         this.visualization.render(performance.now());
                     }
                     
-                    // Add heartbeat message animations to all followers
-                    followers.forEach(followerId => {
-                        console.log(`💓 Adding heartbeat animation: ${leaderId} → ${followerId}`);
-                        
-                        // Add heartbeat message animation
-                        this.visualization.addMessage({
-                            from: leaderId,
-                            to: followerId,
-                            messageType: 'heartbeat',
-                            timestamp: event.timestamp || Date.now()
+                    // Add subtle heartbeat pulse animations (not prominent messages)
+                    if (this.visualization.addHeartbeatPulse) {
+                        this.visualization.addHeartbeatPulse(leaderId, followers);
+                    } else {
+                        // Fallback: very subtle message animations for heartbeats
+                        followers.forEach(followerId => {
+                            this.visualization.addMessage({
+                                from: leaderId,
+                                to: followerId,
+                                messageType: 'heartbeat',
+                                timestamp: event.timestamp || Date.now(),
+                                subtle: true  // Flag for subtle rendering
+                            });
                         });
-                    });
+                    }
                     
-                    console.log(`💓 HEARTBEAT: Added ${followers.length} animations + updated leader state`);
+                    console.log(`💓 HEARTBEAT: Added subtle pulse for ${followers.length} followers`);
                 } else {
                     console.warn('💓 HeartbeatSent but no followers found:', { leaderId, followers, eventData });
                 }
                 break;
                 
+            case 'LogReplicationSent':
+                const replicationLeader = eventData?.leader_id || nodeId;
+                const replicationFollower = eventData?.follower_id;
+                const entriesCount = eventData?.entries_count || 0;
+                const proposalIndices = eventData?.proposal_indices || [];
+                
+                console.log('📦 Processing LogReplicationSent (PROMINENT ANIMATION):', {
+                    replicationLeader,
+                    replicationFollower,
+                    entriesCount,
+                    proposalIndices,
+                    eventData
+                });
+                
+                if (replicationLeader !== undefined && replicationFollower !== undefined && entriesCount > 0) {
+                    // Add prominent replication animation
+                    this.visualization.addReplicationMessage({
+                        from: replicationLeader,
+                        to: replicationFollower,
+                        entriesCount,
+                        proposalIndices,
+                        timestamp: event.timestamp || Date.now()
+                    });
+                    
+                    console.log(`📦 REPLICATION: Added prominent animation ${replicationLeader} → ${replicationFollower} (${entriesCount} entries)`);
+                } else {
+                    console.warn('📦 LogReplicationSent but missing data:', { replicationLeader, replicationFollower, entriesCount, eventData });
+                }
+                break;
+                
+            case 'ReplicationAckReceived':
+                const ackFrom = eventData?.from_follower;
+                const ackTo = eventData?.to_leader || nodeId;
+                const ackSuccess = eventData?.success;
+                const matchedIndex = eventData?.matched_index;
+                
+                console.log('✅ ReplicationAckReceived:', { ackFrom, ackTo, ackSuccess });
+                
+                if (ackFrom !== undefined && ackTo !== undefined) {
+                    
+                    // Add ACK/NACK response animation
+                    this.visualization.addAckMessage({
+                        from: ackFrom,
+                        to: ackTo,
+                        success: ackSuccess,
+                        matchedIndex,
+                        timestamp: event.timestamp || Date.now()
+                    });
+                    
+                    console.log(`✅ ACK: Added ${ackSuccess ? 'SUCCESS' : 'FAILED'} animation ${ackFrom} → ${ackTo}`);
+                } else {
+                    console.warn('❌ ReplicationAckReceived missing critical data:', { 
+                        ackFrom, 
+                        ackTo, 
+                        ackSuccess, 
+                        'ackFrom undefined': ackFrom === undefined,
+                        'ackTo undefined': ackTo === undefined,
+                        eventData,
+                        fullEvent: event
+                    });
+                }
+                break;
+                
+            case 'ConsensusAckReceived':
+                const consensusFrom = eventData?.from_follower;
+                const consensusTo = eventData?.to_leader || nodeId;
+                const consensusSuccess = eventData?.success;
+                const proposalIndex = eventData?.proposal_index;
+                const acksReceived = eventData?.acks_received;
+                const acksNeeded = eventData?.acks_needed;
+                const consensusAchieved = eventData?.consensus_achieved;
+                
+                console.log('🎯 ConsensusAckReceived (PROPOSAL ACK):', { 
+                    consensusFrom, 
+                    consensusTo, 
+                    consensusSuccess, 
+                    proposalIndex, 
+                    acksReceived, 
+                    acksNeeded, 
+                    consensusAchieved 
+                });
+                
+                if (consensusFrom !== undefined && consensusTo !== undefined) {
+                    // Add consensus-specific ACK animation (step 3 of client command flow)
+                    this.visualization.addAckMessage({
+                        from: consensusFrom,
+                        to: consensusTo,
+                        success: consensusSuccess,
+                        proposalIndex,
+                        timestamp: event.timestamp || Date.now(),
+                        isConsensusAck: true, // Mark this as a consensus ACK
+                        acksReceived,
+                        acksNeeded,
+                        consensusAchieved
+                    });
+                    
+                    console.log(`🎯 CONSENSUS ACK: Added ${consensusSuccess ? 'SUCCESS' : 'FAILED'} consensus animation ${consensusFrom} → ${consensusTo} (${acksReceived}/${acksNeeded})`);
+                } else {
+                    console.warn('❌ ConsensusAckReceived missing critical data:', { 
+                        consensusFrom, 
+                        consensusTo, 
+                        eventData 
+                    });
+                }
+                break;
+                
+            case 'ReplicationCompleted':
+                const consensusLeader = eventData?.leader_id || nodeId;
+                const committedIndices = eventData?.committed_indices || [];
+                const acknowledgedBy = eventData?.acknowledged_by || [];
+                
+                console.log('🎉 Processing ReplicationCompleted (CONSENSUS ACHIEVED):', {
+                    consensusLeader,
+                    committedIndices,
+                    acknowledgedBy,
+                    eventData
+                });
+                
+                if (consensusLeader !== undefined && committedIndices.length > 0) {
+                    // Add consensus achievement animation
+                    this.visualization.addConsensusAchievedAnimation({
+                        leaderId: consensusLeader,
+                        committedIndices,
+                        acknowledgedBy,
+                        timestamp: event.timestamp || Date.now()
+                    });
+                    
+                    console.log(`🎉 CONSENSUS: Added celebration animation for ${committedIndices.length} entries committed by Node ${consensusLeader}`);
+                } else {
+                    console.warn('🎉 ReplicationCompleted but missing data:', { consensusLeader, committedIndices, acknowledgedBy, eventData });
+                }
+                break;
+                
             case 'MessageSent':
+                // DEPRECATED: MessageSent events are being replaced by specific event types
+                // Keep for backward compatibility but prefer the new event types
+                console.warn('⚠️ MessageSent event received - consider using specific event types instead:', eventData);
+                
                 if (eventData) {
-                    // Detect if this is a proposal acknowledgment response
-                    if (eventData.message_type === 'AppendEntriesResponse') {
-                        // This is likely an ACK for a proposal
-                        if (this.visualization.addConsensusMessage) {
-                            this.visualization.addConsensusMessage({
-                                type: 'proposal_ack',
-                                from: eventData.from || nodeId,
-                                to: eventData.to || 0,
-                                details: 'ack'
-                            });
-                        }
+                    // Legacy handling for any remaining MessageSent events
+                    if (eventData.message_details && eventData.message_details.includes('Heartbeat')) {
+                        // This is a legacy heartbeat - handle as subtle
+                        this.visualization.addMessage({
+                            from: eventData.from || nodeId,
+                            to: eventData.to || 0,
+                            messageType: 'heartbeat',
+                            timestamp: event.timestamp || Date.now(),
+                            subtle: true
+                        });
                     } else {
-                        // Regular message
+                        // Other legacy messages - treat as regular
                         this.visualization.addMessage({
                             from: eventData.from || nodeId,
                             to: eventData.to || 0,
@@ -539,18 +690,18 @@ class RaftApp {
                         });
                     }
                 }
-                // Do NOT update node state for MessageSent events
                 break;
                 
             case 'LogEntryProposed':
-                console.log('📋 Processing LogEntryProposed event:', {
+                console.log('📋 Processing LogEntryProposed event (STEP 2: LEADER BROADCAST):', {
                     nodeId,
                     proposedIndex: eventData?.proposed_index,
                     command: eventData?.command,
                     requiredAcks: eventData?.required_acks
                 });
                 
-                // Show proposal replication from leader to all followers
+                // STEP 2: Leader broadcasts the proposal to all followers
+                // This should show simultaneous animations from leader to all followers
                 const followerIds = [];
                 for (let i = 0; i < this.clusterSize; i++) {
                     if (i !== nodeId) {
@@ -558,37 +709,78 @@ class RaftApp {
                     }
                 }
                 
-                // Add consensus message animation for proposal replication
-                if (this.visualization.addConsensusMessage) {
-                    this.visualization.addConsensusMessage({
-                        type: 'proposal_replication',
-                        from: nodeId,
-                        targets: followerIds,
-                        command: eventData?.command || 'proposal'
-                    });
-                }
+                console.log(`📋 BROADCASTING from Leader ${nodeId} to ${followerIds.length} followers: [${followerIds.join(', ')}]`);
                 
-                console.log(`📋 Node ${nodeId} proposed "${eventData?.command}" - replicating to ${followerIds.length} followers`);
+                // Add BROADCAST animation: one leader sending to multiple followers simultaneously
+                followerIds.forEach(followerId => {
+                    this.visualization.addMessage({
+                        from: nodeId,
+                        to: followerId,
+                        messageType: 'proposal_broadcast',
+                        command: eventData?.command || 'proposal',
+                        proposedIndex: eventData?.proposed_index,
+                        timestamp: event.timestamp || Date.now()
+                    });
+                });
+                
+                console.log(`📋 STEP 2 COMPLETE: Leader ${nodeId} broadcast "${eventData?.command}" to ${followerIds.length} followers`);
                 break;
                 
             case 'ClientCommandReceived':
+                const isAcceptedByLeader = eventData?.accepted_by_leader;
+                
                 console.log('📨 Processing ClientCommandReceived event:', {
                     nodeId,
                     command: eventData?.command,
-                    acceptedByLeader: eventData?.accepted_by_leader
+                    acceptedByLeader: isAcceptedByLeader,
+                    isLeader: isAcceptedByLeader,
+                    isFollower: !isAcceptedByLeader
                 });
                 
-                // Show command submission with a visual indicator
-                // Instead of using node 999, we'll add a special client message animation
-                // that shows the command coming from outside the cluster
-                this.visualization.addClientMessage({
-                    to: nodeId,
-                    messageType: 'client_command',
-                    command: eventData?.command,
-                    timestamp: event.timestamp || Date.now()
-                });
+                if (isAcceptedByLeader) {
+                    // STEP 1: This is the leader receiving and accepting the command
+                    console.log(`📨 LEADER ${nodeId} accepted client command: "${eventData?.command}"`);
+                    
+                    // Show command coming from external client to the leader
+                    this.visualization.addClientMessage({
+                        to: nodeId,
+                        messageType: 'client_command_accepted',
+                        command: eventData?.command,
+                        timestamp: event.timestamp || Date.now()
+                    });
+                    
+                } else {
+                    // STEP 1: This is a follower rejecting the command (should forward to leader)
+                    console.log(`📨 FOLLOWER ${nodeId} rejected client command: "${eventData?.command}" - should forward to leader`);
+                    
+                    // Show command coming from external client to this follower (which will reject)
+                    this.visualization.addClientMessage({
+                        to: nodeId,
+                        messageType: 'client_command_rejected',
+                        command: eventData?.command,
+                        timestamp: event.timestamp || Date.now()
+                    });
+                    
+                    // TODO: In a real implementation, we'd need to find the current leader and show forwarding
+                    // For now, we'll identify the leader from current node states
+                    const currentLeader = this.getCurrentLeader();
+                    if (currentLeader !== null && currentLeader !== nodeId) {
+                        console.log(`🔄 FORWARDING: Node ${nodeId} → Leader ${currentLeader}`);
+                        
+                        // Show forwarding animation from follower to leader
+                        setTimeout(() => {
+                            this.visualization.addMessage({
+                                from: nodeId,
+                                to: currentLeader,
+                                messageType: 'command_forward',
+                                command: eventData?.command,
+                                timestamp: event.timestamp + 100 || Date.now() + 100
+                            });
+                        }, 200); // Small delay to show the sequence
+                    }
+                }
                 
-                console.log(`📨 Node ${nodeId} received client command: "${eventData?.command}"`);
+                console.log(`📨 Node ${nodeId} processed client command: "${eventData?.command}" (accepted: ${isAcceptedByLeader})`);
                 break;
                 
             case 'ClusterStatus':
@@ -947,6 +1139,23 @@ class RaftApp {
             
             this.handleRaftEvent(fallbackLeaderEvent);
         }
+    }
+
+    /**
+     * Get current leader node ID from visualization state
+     */
+    getCurrentLeader() {
+        if (!this.visualization || !this.visualization.nodes) {
+            return null;
+        }
+        
+        for (const [nodeId, node] of this.visualization.nodes.entries()) {
+            if (node.state === 'leader') {
+                return nodeId;
+            }
+        }
+        
+        return null; // No leader found
     }
 
     /**

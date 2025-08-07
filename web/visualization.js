@@ -59,6 +59,7 @@ class RaftVisualization {
             heartbeat: '#ff8cc8',
             vote: '#ffd43b',
             proposal: '#ff8a50',     // Orange for proposal messages
+            replication: '#b8620a',  // Dark orange for replication messages
             ack: '#69db7c',         // Green for ACK messages
             text: '#333'
         };
@@ -238,10 +239,29 @@ class RaftVisualization {
     }
     
     /**
+     * Check if a message is proposal-related (should always be shown regardless of showMessages setting)
+     * @param {Object} messageData - Message data
+     * @returns {boolean} True if it's a proposal-related message
+     */
+    isProposalMessage(messageData) {
+        const messageType = messageData.messageType || messageData.type || '';
+        return messageType === 'proposal_broadcast' || 
+               messageType === 'proposal_ack_success' || 
+               messageType === 'proposal_ack_failure' ||
+               messageType === 'consensus_ack_success' ||
+               messageType === 'consensus_ack_failure' ||
+               messageType === 'proposal' ||
+               messageType === 'log_proposal' ||
+               messageType === 'proposal_replication';
+    }
+
+    /**
      * Add message animation
      * @param {Object} messageData - Message data
      */
     addMessage(messageData) {
+        console.error('🎯🎯🎯 CRITICAL DEBUG: addMessage called with:', messageData);
+        
         // Determine message classification
         // Since backend doesn't always send hasLogEntries flag, treat all AppendEntriesRequest as replication
         // unless explicitly marked as heartbeat type
@@ -301,12 +321,21 @@ class RaftVisualization {
             return;
         }
         
-        // Filter regular messages (including replication)
-        if (!this.showMessages && !isHeartbeatType) {
+        // Filter regular messages (excluding client commands and proposals which should always show)
+        const isClientCommandType = messageData.messageType === 'client_command' || 
+                                   messageData.from === 'client' || 
+                                   messageData.from === 999; // Client ID from WebSocket commands
+        const isProposalType = this.isProposalMessage(messageData);
+        
+        if (!this.showMessages && !isHeartbeatType && !isClientCommandType && !isProposalType) {
             if (Math.random() < 0.02) { // Only log 2% of filtered messages
-                console.log('🚫 FILTERED BY showMessages:', messageData.messageType);
+                console.log('🚫 FILTERED BY showMessages (NOT proposal):', messageData.messageType);
             }
             return;
+        }
+        
+        if (isProposalType) {
+            console.log('🎯 PROPOSAL MESSAGE PRESERVED:', messageData.messageType);
         }
         
         const fromNode = this.nodes.get(messageData.from);
@@ -331,11 +360,11 @@ class RaftVisualization {
         let duration = 1000; // Default 1 second
         
         // Proposal messages are slightly slower to show the consensus process
-        if (messageType === 'proposal' || messageType === 'log_proposal') {
+        if (messageType === 'proposal' || messageType === 'log_proposal' || messageType === 'proposal_broadcast') {
             duration = 1200;
         }
         // ACK messages are faster to show quick response
-        else if (messageType === 'ack' || messageType === 'proposal_ack') {
+        else if (messageType === 'ack' || messageType === 'proposal_ack' || messageType === 'ack_success' || messageType === 'ack_failure' || messageType === 'proposal_ack_success' || messageType === 'proposal_ack_failure' || messageType === 'consensus_ack_success' || messageType === 'consensus_ack_failure') {
             duration = 800;
         }
         
@@ -388,10 +417,8 @@ class RaftVisualization {
     addClientMessage(messageData) {
         console.log('📨 Visualization addClientMessage called:', messageData);
         
-        if (!this.showMessages) {
-            console.log('🚫 Client message filtered out (showMessages=false)');
-            return;
-        }
+        // Client messages should always be visible regardless of filter settings
+        // (They represent user actions and are important for understanding cluster behavior)
         
         const toNode = this.nodes.get(messageData.to);
         
@@ -465,6 +492,39 @@ class RaftVisualization {
             case 'client_command':
                 color = this.colors.message; // Blue
                 break;
+            case 'client_command_accepted':
+                color = '#51cf66'; // Green for accepted commands
+                break;
+            case 'client_command_rejected':
+                color = '#ff6b6b'; // Red for rejected commands  
+                break;
+            case 'command_forward':
+                color = '#ffd43b'; // Yellow for forwarding
+                break;
+            case 'proposal_broadcast':
+                color = '#ff8a50'; // Orange for proposal broadcasts (distinct from replication)
+                break;
+            case 'replication':
+                color = this.colors.replication; // Dark orange for replication
+                break;
+            case 'ack_success':
+                color = this.colors.ack; // Green for successful ACK
+                break;
+            case 'ack_failure':
+                color = '#ff6b6b'; // Red for failed ACK/NACK
+                break;
+            case 'proposal_ack_success':
+                color = '#51cf66'; // Bright green for successful proposal ACK
+                break;
+            case 'proposal_ack_failure':
+                color = '#ff4757'; // Bright red for failed proposal ACK
+                break;
+            case 'consensus_ack_success':
+                color = '#00ff00'; // Bright neon green for consensus ACK success (most prominent)
+                break;
+            case 'consensus_ack_failure':
+                color = '#ff0000'; // Bright neon red for consensus ACK failure (most prominent)
+                break;
             default:
                 color = this.colors.message; // Default blue
                 break;
@@ -474,6 +534,170 @@ class RaftVisualization {
         return color;
     }
     
+    /**
+     * Add subtle heartbeat pulse animation (not prominent messages)
+     * @param {number} leaderId - Leader node ID
+     * @param {Array} followers - Array of follower node IDs
+     */
+    addHeartbeatPulse(leaderId, followers) {
+        console.log('💓 Adding subtle heartbeat pulse:', { leaderId, followers });
+        
+        if (!this.showHeartbeats) {
+            return;
+        }
+        
+        const leaderNode = this.nodes.get(leaderId);
+        if (!leaderNode) {
+            console.warn('❌ Leader node not found for heartbeat pulse:', leaderId);
+            return;
+        }
+        
+        // Add subtle pulse animation to leader node (visual indication only)
+        leaderNode.heartbeatPulse = Date.now();
+        
+        // Add very subtle message animations to followers if needed
+        followers.forEach(followerId => {
+            this.addMessage({
+                from: leaderId,
+                to: followerId,
+                messageType: 'heartbeat',
+                timestamp: Date.now(),
+                subtle: true
+            });
+        });
+        
+        console.log(`💓 Added heartbeat pulse from Node ${leaderId} to ${followers.length} followers`);
+    }
+    
+    /**
+     * Add prominent replication message animation
+     * @param {Object} messageData - Replication message data
+     */
+    addReplicationMessage(messageData) {
+        console.log('📦 Adding prominent replication animation:', messageData);
+        
+        // Always show proposal-related replication, even if showMessages is false
+        const isProposalType = this.isProposalMessage(messageData);
+        
+        if (!this.showMessages && !isProposalType) {
+            console.log('🚫 FILTERED replication message (not proposal):', messageData.messageType);
+            return;
+        }
+        
+        if (isProposalType) {
+            console.log('🎯 PROPOSAL REPLICATION PRESERVED:', messageData.messageType);
+        }
+        
+        // Add prominent replication animation with special styling
+        const replicationMsg = {
+            ...messageData,
+            messageType: 'replication',
+            prominent: true  // Flag for special rendering
+        };
+        
+        this.addMessage(replicationMsg);
+        
+        console.log(`📦 Added replication animation: ${messageData.from} → ${messageData.to} (${messageData.entriesCount} entries)`);
+    }
+    
+    /**
+     * Add ACK/NACK response animation
+     * @param {Object} ackData - ACK response data
+     */
+    addAckMessage(ackData) {
+        console.log('✅ addAckMessage called with:', ackData);
+        
+        // Always show proposal-related ACKs, even if showMessages is false
+        const isProposalType = this.isProposalMessage(ackData);
+        
+        if (!this.showMessages && !isProposalType) {
+            console.warn('❌ ACK message blocked by showMessages setting (not proposal):', this.showMessages);
+            return;
+        }
+        
+        if (isProposalType) {
+            console.log('🎯 PROPOSAL ACK PRESERVED:', ackData.messageType);
+        }
+        
+        // Verify nodes exist
+        const fromNode = this.nodes.get(ackData.from);
+        const toNode = this.nodes.get(ackData.to);
+        
+        if (!fromNode || !toNode) {
+            console.error('❌ addAckMessage: Missing nodes!', {
+                from: ackData.from,
+                to: ackData.to,
+                fromNode: !!fromNode,
+                toNode: !!toNode,
+                availableNodes: Array.from(this.nodes.keys())
+            });
+            return;
+        }
+        
+        // Add ACK response animation with success/failure styling
+        // Use different message types for consensus ACKs vs regular heartbeat ACKs
+        let messageType;
+        if (ackData.isConsensusAck) {
+            // Consensus ACKs (step 3 of client command flow) - more prominent
+            messageType = ackData.success ? 'consensus_ack_success' : 'consensus_ack_failure';
+        } else {
+            // Regular heartbeat ACKs - less prominent
+            messageType = ackData.success ? 'proposal_ack_success' : 'proposal_ack_failure';
+        }
+        
+        const ackMsg = {
+            from: ackData.from,
+            to: ackData.to,
+            messageType,
+            matchedIndex: ackData.matchedIndex,
+            proposalIndex: ackData.proposalIndex,
+            acksReceived: ackData.acksReceived,
+            acksNeeded: ackData.acksNeeded,
+            consensusAchieved: ackData.consensusAchieved,
+            timestamp: ackData.timestamp || Date.now()
+        };
+        
+        console.log('🎯 Creating ACK message object:', ackMsg);
+        
+        this.addMessage(ackMsg);
+        
+        console.log(`✅ Added ${ackData.success ? 'SUCCESS' : 'FAILED'} ACK animation: ${ackData.from} → ${ackData.to}`);
+        console.log(`📊 Current messages in queue: ${this.messages.length}`);
+    }
+    
+    /**
+     * Add consensus achieved celebration animation
+     * @param {Object} consensusData - Consensus achievement data
+     */
+    addConsensusAchievedAnimation(consensusData) {
+        console.log('🎉 Adding consensus achievement animation:', consensusData);
+        
+        // Always show consensus animations (they are always proposal-related)
+        if (!this.showMessages) {
+            console.log('🎯 CONSENSUS ANIMATION PRESERVED despite showMessages=false');
+        }
+        
+        const { leaderId, committedIndices, acknowledgedBy } = consensusData;
+        
+        // Add special celebration animation
+        const leaderNode = this.nodes.get(leaderId);
+        if (leaderNode) {
+            // Add celebration pulse to leader
+            leaderNode.consensusPulse = Date.now();
+            leaderNode.lastConsensusIndices = committedIndices;
+        }
+        
+        // Add celebration indicators to acknowledging nodes
+        acknowledgedBy.forEach(nodeId => {
+            const node = this.nodes.get(nodeId);
+            if (node) {
+                node.consensusParticipant = Date.now();
+            }
+        });
+        
+        console.log(`🎉 Added consensus celebration: Leader ${leaderId}, ${committedIndices.length} entries, ${acknowledgedBy.length} participants`);
+    }
+
     /**
      * Start animation loop with dual-mode support
      */

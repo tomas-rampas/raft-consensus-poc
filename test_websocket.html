@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>Raft WebSocket Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="messages"></div>
+    <button onclick="submitCommand()">Submit Test Command</button>
+
+    <script>
+        const ws = new WebSocket('ws://127.0.0.1:8082');
+        const messagesDiv = document.getElementById('messages');
+        const statusDiv = document.getElementById('status');
+
+        ws.onopen = function(event) {
+            statusDiv.textContent = 'Connected';
+            console.log('WebSocket connected');
+        };
+
+        ws.onmessage = function(event) {
+            console.log('📨 Received:', event.data);
+            const data = JSON.parse(event.data);
+            
+            // Log specific events we care about
+            if (data.event_type && typeof data.event_type === 'object') {
+                if (data.event_type.LogEntryProposed) {
+                    console.error('🚨🚨🚨 CRITICAL DEBUG: LogEntryProposed event received!', data);
+                }
+                if (data.event_type.ReplicationAckReceived) {
+                    console.error('🚨🚨🚨 CRITICAL DEBUG: ReplicationAckReceived event received!', data);
+                }
+                if (data.event_type.ClientCommandReceived) {
+                    console.error('🚨🚨🚨 CRITICAL DEBUG: ClientCommandReceived event received!', data);
+                }
+            }
+            
+            messagesDiv.innerHTML += '<div>' + JSON.stringify(data, null, 2) + '</div>';
+        };
+
+        ws.onerror = function(error) {
+            console.error('WebSocket error:', error);
+            statusDiv.textContent = 'Error';
+        };
+
+        ws.onclose = function(event) {
+            console.log('WebSocket closed');
+            statusDiv.textContent = 'Closed';
+        };
+
+        function submitCommand() {
+            const command = {
+                type: "submit_command",
+                command: "test_websocket_command"
+            };
+            ws.send(JSON.stringify(command));
+            console.log('Sent command:', command);
+        }
+    </script>
+</body>
+</html>

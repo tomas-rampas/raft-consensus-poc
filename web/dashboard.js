@@ -896,16 +896,31 @@ class RaftDashboard {
      * @returns {boolean} True if it's a replication/ACK event
      */
     isReplicationEvent(event) {
-        // Check if the event message contains replication/ACK-related keywords
-        const message = event.message.toLowerCase();
-        return message.includes('replication') || 
-               message.includes('acknowledgment') ||
-               message.includes('acknowledge') ||
-               message.includes('ack') ||
-               message.includes('sent replication message') ||
-               message.includes('sent response') ||
-               message.includes('sent appendentries') ||
-               message.includes('appendentries');
+        // Check if the event message contains HEARTBEAT replication/ACK-related keywords
+        // BUT DO NOT filter out CONSENSUS/PROPOSAL messages
+        const message = event.message?.toLowerCase() || '';
+        const eventType = (typeof event.event_type === 'string' ? event.event_type : event.event_type?.type) || event.type || '';
+        
+        // NEVER filter out consensus-related events (these are the important proposal flows)
+        if (message.includes('consensus') || 
+            message.includes('proposal') || 
+            eventType === 'LogReplicationSent' || 
+            eventType === 'ConsensusAckReceived' ||
+            eventType === 'LogEntryProposed') {
+            console.log(`🔍 FILTER DEBUG: PRESERVING proposal/consensus event (${eventType}):`, event.message?.substring(0, 100));
+            return false; // DO NOT filter these important events
+        }
+        
+        // Only filter out regular heartbeat replication (not consensus proposals)
+        const shouldFilter = message.includes('heartbeat') ||
+               message.includes('replicationackreceived') || // Regular heartbeat ACKs
+               (message.includes('ack') && message.includes('heartbeat'));
+        
+        if (shouldFilter) {
+            console.log(`🔍 FILTER DEBUG: FILTERING heartbeat event (${eventType}):`, event.message?.substring(0, 100));
+        }
+        
+        return shouldFilter;
     }
     
     /**
