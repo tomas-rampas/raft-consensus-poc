@@ -265,6 +265,77 @@ impl RaftEvent {
         )
     }
 
+    /// Creates an election started event
+    pub fn election_started(
+        candidate_id: NodeId,
+        candidate_term: u64,
+        votes_needed: usize,
+    ) -> Self {
+        Self::new(
+            candidate_id,
+            candidate_term,
+            RaftEventType::ElectionStarted {
+                candidate_term,
+                votes_needed,
+            },
+        )
+    }
+
+    /// Creates a vote requested event
+    pub fn vote_requested(
+        candidate_id: NodeId,
+        candidate_term: u64,
+        last_log_index: u64,
+        last_log_term: u64,
+    ) -> Self {
+        Self::new(
+            candidate_id,
+            candidate_term,
+            RaftEventType::VoteRequested {
+                candidate_id,
+                candidate_term,
+                last_log_index,
+                last_log_term,
+            },
+        )
+    }
+
+    /// Creates a vote granted event
+    pub fn vote_granted(
+        voter_id: NodeId,
+        candidate_id: NodeId,
+        term: u64,
+    ) -> Self {
+        Self::new(
+            voter_id,
+            term,
+            RaftEventType::VoteGranted {
+                voter_id,
+                candidate_id,
+                term,
+            },
+        )
+    }
+
+    /// Creates a vote denied event
+    pub fn vote_denied(
+        voter_id: NodeId,
+        candidate_id: NodeId,
+        term: u64,
+        reason: String,
+    ) -> Self {
+        Self::new(
+            voter_id,
+            term,
+            RaftEventType::VoteDenied {
+                voter_id,
+                candidate_id,
+                term,
+                reason,
+            },
+        )
+    }
+
     /// Creates a log entry proposed event
     pub fn log_entry_proposed(
         node_id: NodeId,
