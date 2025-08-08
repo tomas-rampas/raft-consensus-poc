@@ -250,6 +250,7 @@ class RaftVisualization {
                messageType === 'proposal_ack_failure' ||
                messageType === 'consensus_ack_success' ||
                messageType === 'consensus_ack_failure' ||
+               messageType === 'consensus_ack' || // ConsensusAckReceived messages
                messageType === 'proposal' ||
                messageType === 'log_proposal' ||
                messageType === 'proposal_replication';
@@ -638,17 +639,19 @@ class RaftVisualization {
         // Use different message types for consensus ACKs vs regular heartbeat ACKs
         let messageType;
         if (ackData.isConsensusAck) {
-            // Consensus ACKs (step 3 of client command flow) - more prominent
-            messageType = ackData.success ? 'consensus_ack_success' : 'consensus_ack_failure';
+            // Consensus ACKs (step 3 of client command flow) - use the type passed from app.js
+            messageType = ackData.type || (ackData.success ? 'consensus_ack_success' : 'consensus_ack_failure');
         } else {
-            // Regular heartbeat ACKs - less prominent
-            messageType = ackData.success ? 'proposal_ack_success' : 'proposal_ack_failure';
+            // Regular heartbeat ACKs - less prominent  
+            messageType = ackData.type || (ackData.success ? 'proposal_ack_success' : 'proposal_ack_failure');
         }
         
         const ackMsg = {
             from: ackData.from,
             to: ackData.to,
             messageType,
+            color: ackData.color, // Pass through the bright green color from app.js
+            duration: ackData.duration, // Pass through the 1000ms duration from app.js
             matchedIndex: ackData.matchedIndex,
             proposalIndex: ackData.proposalIndex,
             acksReceived: ackData.acksReceived,

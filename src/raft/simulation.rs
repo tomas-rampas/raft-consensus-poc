@@ -287,6 +287,13 @@ async fn handle_incoming_message(
                 // based on whether this was a heartbeat or actual proposal replication
                 let has_consensus_acks = !consensus_acks.is_empty();
 
+                // VISUALIZATION FIX: Add delay ONLY for consensus ACKs, not heartbeats
+                // This preserves heartbeat timing while making consensus flow visually clear
+                if has_consensus_acks {
+                    // Delay consensus ACK events for better visualization
+                    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                }
+
                 if has_consensus_acks {
                     // This was a proposal ACK - emit ConsensusAckReceived events
                     for ack_info in &consensus_acks {
@@ -429,6 +436,10 @@ async fn handle_incoming_message(
         }
         RpcMessage::RequestVoteRequest { from, request, .. } => {
             let response = node.handle_request_vote(&request);
+            
+            // VISUALIZATION FIX: Add delay before emitting vote response events
+            // This makes the voting process visually clear: vote requests → deliberation → vote responses
+            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
             
             // Emit VoteGranted or VoteDenied event based on the response
             if response.vote_granted {

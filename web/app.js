@@ -615,19 +615,23 @@ class RaftApp {
                 
                 if (consensusFrom !== undefined && consensusTo !== undefined) {
                     // Add consensus-specific ACK animation (step 3 of client command flow)
+                    // Backend now handles proper timing with simulated network delay
                     this.visualization.addAckMessage({
                         from: consensusFrom,
                         to: consensusTo,
                         success: consensusSuccess,
                         proposalIndex,
                         timestamp: event.timestamp || Date.now(),
+                        type: 'consensus_ack',
+                        color: consensusSuccess ? '#00ff44' : '#ff4400', // Bright green for success, orange for failure
+                        duration: 1000, // Make ACKs longer duration to be more visible
                         isConsensusAck: true, // Mark this as a consensus ACK
                         acksReceived,
                         acksNeeded,
                         consensusAchieved
                     });
                     
-                    console.log(`🎯 CONSENSUS ACK: Added ${consensusSuccess ? 'SUCCESS' : 'FAILED'} consensus animation ${consensusFrom} → ${consensusTo} (${acksReceived}/${acksNeeded})`);
+                    console.log(`🎯 CONSENSUS ACK: Added ${consensusSuccess ? 'SUCCESS' : 'FAILED'} consensus animation ${consensusFrom} → ${consensusTo} (${acksReceived}/${acksNeeded}) with bright color`);
                 } else {
                     console.warn('❌ ConsensusAckReceived missing critical data:', { 
                         consensusFrom, 
