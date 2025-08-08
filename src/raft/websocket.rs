@@ -519,7 +519,7 @@ impl HttpServer {
         info!("📁 Serving static files from: {}", static_dir);
 
         // Create index route that serves index.html for root path
-        let index_path = format!("{}/index.html", static_dir);
+        let index_path = format!("{static_dir}/index.html");
         let index = warp::path::end().and(warp::fs::file(index_path));
 
         // Create static file serving route
@@ -545,7 +545,7 @@ impl HttpServer {
         );
 
         // Parse the address
-        let addr: std::net::SocketAddr = format!("{}:{}", host, http_port).parse()?;
+        let addr: std::net::SocketAddr = format!("{host}:{http_port}").parse()?;
 
         // Start the server
         warp::serve(routes).run(addr).await;

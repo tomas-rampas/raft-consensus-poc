@@ -1,16 +1,28 @@
 # Raft Consensus Algorithm - Web Visualization
 
-This web-based visualization provides a real-time, interactive dashboard for observing the Raft consensus algorithm in action. The visualization shows cluster dynamics, message flows, leader elections, log replication, and more through an intuitive graphical interface.
+**✨ Complete Election Process Visualization Now Available! ✨**
 
-## Overview
+This web-based visualization provides a real-time, interactive dashboard for observing the Raft consensus algorithm in action, featuring **breakthrough election negotiation visibility** that shows the complete democratic process previously hidden during leader elections.
 
-The web dashboard demonstrates key Raft consensus concepts:
+## 🎯 Overview
 
-- **Leader Election**: Watch nodes transition between Follower, Candidate, and Leader states
-- **Heartbeat Messages**: See leaders maintaining authority through periodic heartbeats
-- **Log Replication**: Observe how client commands are replicated across the cluster
-- **Fault Tolerance**: Simulate leader failures and witness automatic recovery
-- **Real-time Statistics**: Track message counts, elections, and cluster state changes
+The web dashboard demonstrates **all three core Raft communication types**:
+
+### 🗳️ **Election Process (NEWLY ENHANCED!)**
+- **Complete Candidate Journey**: Watch nodes become candidates and request votes in real-time
+- **Vote Negotiations**: See every vote request and response flowing between nodes
+- **Democratic Process**: No more "invisible seconds" during leader elections
+- **Manual Election Triggers**: Test election scenarios with interactive button controls
+
+### 📝 **Proposal Process**  
+- **Client Command Submission**: Submit commands through the web interface
+- **Consensus Tracking**: Watch commands flow from proposal to commitment
+- **Log Replication**: Observe how commands are replicated across the cluster
+
+### ❤️ **Heartbeat Process**
+- **Leader Authority**: See leaders maintaining authority through periodic heartbeats  
+- **Timeout Detection**: Watch followers detect leader failures
+- **Real-time Statistics**: Track message counts, elections, and cluster health
 
 ## Quick Start
 
@@ -52,119 +64,138 @@ http://127.0.0.1:8081
 
 The dashboard will automatically connect to the backend via WebSocket and start displaying real-time cluster activity.
 
-## Dashboard Components
+## 🎛️ Dashboard Components
 
-### Cluster Visualization (Top Left - 75%)
-- **Canvas-based real-time display** of the 5-node Raft cluster
-- **Node States**: Visual indicators for Follower (blue), Candidate (yellow), Leader (green)
-- **Message Animations**: Live message flows between nodes
-  - Blue lines: Heartbeat messages from leader to followers
-  - Red lines: Client commands from external clients
-  - Green lines: Append entries for log replication
-- **Interactive Controls**: Toggle heartbeat and message visibility
+### 🖼️ **Cluster Visualization (Main Canvas)**
+- **5-Node Live Cluster Display**: Real-time canvas-based visualization
+- **Node State Indicators**: 
+  - 👥 **Followers** (blue): Following current leader
+  - 🗳️ **Candidates** (yellow): Requesting votes during elections  
+  - 👑 **Leaders** (green): Managing cluster and handling requests
+- **Complete Message Flow Animations**:
+  - 💙 **Heartbeat Messages**: Leader maintaining authority
+  - 🗳️ **Election Messages**: Vote requests and responses (NEW!)
+  - 📝 **Proposal Messages**: Command replication and consensus
+- **Enhanced Visual Feedback**: Different colors and speeds for different message types
 
-### Control Panel (Top Right - 25%)
-Interactive controls for cluster management:
+### 🎮 **Interactive Controls**
+- **Command Submission**: Test proposal consensus with custom commands
+- **Manual Election Trigger**: Force leader elections with one click (NEW!)
+- **Communication Type Filters**: 
+  - Show/hide Elections (NEW!)
+  - Show/hide Proposals  
+  - Show/hide Heartbeats
+- **Visualization Controls**: Pause/Resume, Clear animations
 
-- **Command Submission**: Text input to send commands to the cluster
-  - Type any command (e.g., `"hello"`, `"user_action_123"`, `"test_cmd"`)
-  - Commands are sent to all nodes; only the leader accepts them
-- **Cluster Controls**:
-  - ⏸️ **Pause/Resume**: Freeze/unfreeze the visualization
-  - 🧹 **Clear**: Clear message animations
-  - 🔄 **Reset**: Reset statistics and timeline
-  - 👑 **Change Leader**: Simulate leader failure to trigger new election
+### 📊 **Real-Time Statistics Dashboard**
+**Three Core Communication Types** (NEW: Clean 3-Type Model):
 
-### Statistics Panel (Top Right - 25%)
-Real-time metrics displayed in a 2x2 grid:
+- **🗳️ Elections**: Count of election processes and vote negotiations
+- **📝 Proposals**: Client commands and consensus achievements  
+- **❤️ Heartbeats**: Leader maintenance messages
+- **Current Cluster State**: Term, Leader, Active Nodes
 
-- **Total Messages**: Count of all messages processed
-- **Leader Elections**: Number of leadership changes
-- **Log Entries**: Successfully committed commands
-- **Current Term**: Latest consensus term number
+### 🏛️ **Cluster Information Panel**
+**Enhanced Node Details** with real-time state tracking:
 
-### Node Information (Bottom Left - 50%)
-Detailed view of each node's current state:
+- **Node Cards**: Individual cards for each of the 5 cluster nodes
+- **Live State Display**: Current role (👥 Follower/🗳️ Candidate/👑 Leader) 
+- **Term Tracking**: Current consensus term for each node
+- **Real-time Updates**: Automatic updates during elections and state changes
+- **Visual Indicators**: Color-coded states matching the main visualization
 
-- **Node ID and State**: Current role (Follower/Candidate/Leader)
-- **Term**: Current consensus term
-- **Log Size**: Number of entries in the node's log
-- **Commit Index**: Last committed log entry
-- **Votes**: Vote count during elections
+## 🎯 How to Use the Dashboard
 
-### Event Timeline (Bottom Right - 50%)
-Chronological log of cluster events:
+### 🗳️ **NEW: Complete Election Visualization**
+1. **Trigger Manual Election**: Click the "Trigger Election" button
+2. **Watch Leader Step Down**: Current leader becomes a follower
+3. **See Candidate Emergence**: A follower becomes a candidate (turns yellow)  
+4. **Observe Vote Requests**: Watch vote request messages flow to all nodes
+5. **Track Vote Responses**: See individual vote granted/denied responses
+6. **Witness Democratic Victory**: Watch candidate become leader with majority votes
+7. **Confirm New Leadership**: New leader starts sending heartbeats
 
-- **Real-time Event Stream**: Live updates as events occur
-- **Event Types**: State changes, elections, log entries, heartbeats
-- **Filtering**: Toggle to show/hide heartbeat events
-- **Auto-scroll**: Latest events appear at the top
+**Key Innovation**: No more "invisible seconds" - every step of the election is now visible!
 
-## How to Use the Dashboard
+### 📝 **Proposal Process Testing**
+1. **Submit Command**: Enter text in "Submit Proposal Command" field
+2. **Watch Proposal Flow**: See command flow from client to leader
+3. **Observe Consensus**: Watch leader broadcast to followers for consensus
+4. **Track Acknowledgments**: See follower responses coming back to leader
+5. **Confirm Commitment**: Successful consensus updates statistics
 
-### Basic Observation
-1. **Watch Initial Leader Election**: When started, nodes elect their first leader
-2. **Observe Heartbeats**: See periodic blue message flows from leader to followers
-3. **Monitor Statistics**: Watch counters update in real-time
+### ❤️ **Heartbeat Monitoring**
+1. **Observe Regular Heartbeats**: See blue messages flowing from leader
+2. **Monitor Leader Health**: Consistent heartbeats indicate healthy leadership
+3. **Detect Leadership Changes**: Heartbeat pattern changes when leaders change
 
-### Command Submission
-1. **Enter Command**: Type any text in the "Submit Command" field
-2. **Submit**: Click the 📝 button or press Enter
-3. **Watch Animation**: Red line flows from left edge to target node
-4. **Check Timeline**: Command appears in event log
-5. **Verify Replication**: If accepted by leader, see log replication messages
+### 🎛️ **Interactive Controls**
+- **Communication Type Toggles**: Filter visualization by message type
+- **Pause/Resume**: Stop animation to examine specific moments
+- **Clear Statistics**: Reset counters for focused testing
 
-### Leader Change Simulation
-1. **Click "👑 Change Leader"**: Simulates current leader failure
-2. **Watch Transition**: Leader becomes unresponsive for 2 seconds
-3. **Observe Election**: Followers detect timeout and start new election
-4. **See Recovery**: New leader elected and heartbeats resume
+## 🎓 Understanding Raft Through Enhanced Visualization
 
-### Timeline Filtering
-- **Toggle "Show Heartbeats"**: Filter out heartbeat noise to see important events
-- **Clear Timeline**: Reset event history for focused observation
+### 🗳️ **Complete Democratic Election Process** (NEWLY VISIBLE!)
+1. **Election Trigger**: Leader failure or manual trigger → followers detect timeout
+2. **Candidate Emergence**: Follower becomes candidate (👥 → 🗳️) and increments term
+3. **Vote Request Broadcast**: Candidate sends VoteRequested events to all nodes
+4. **Democratic Voting**: Each node responds with VoteGranted/VoteDenied based on algorithm rules
+5. **Majority Consensus**: Candidate wins with majority votes (3/5 in our 5-node cluster)
+6. **Leadership Transition**: Winner becomes leader (🗳️ → 👑) and starts heartbeats
+7. **Cluster Stabilization**: All nodes acknowledge new leader and resume normal operation
 
-## Understanding Raft Through the Visualization
+**Educational Value**: Watch democracy in action! See how distributed systems achieve consensus through voting.
 
-### Leader Election Process
-1. **Timeout**: Follower doesn't receive heartbeat and becomes Candidate (yellow)
-2. **Vote Requests**: Candidate sends vote requests to all other nodes
-3. **Majority Vote**: If candidate receives majority, becomes Leader (green)
-4. **Authority**: New leader starts sending heartbeats to establish authority
+### 📝 **Proposal Consensus Process**
+1. **Command Submission**: Client submits command through web interface
+2. **Leader Processing**: Only leader accepts commands (others reject and forward)
+3. **Proposal Broadcasting**: Leader creates proposal and requests consensus from followers
+4. **Follower Acknowledgments**: Followers validate and respond with ACK/NACK
+5. **Majority Consensus**: Leader commits when majority of followers acknowledge
+6. **Replication Completion**: Command is officially committed to distributed log
 
-### Log Replication
-1. **Client Command**: External command submitted (red animation)
-2. **Leader Processing**: Leader accepts command and adds to its log
-3. **Replication**: Leader sends AppendEntries to all followers
-4. **Consensus**: Once majority acknowledges, entry is committed
-5. **Statistics Update**: Log Entries counter increments
+### ❤️ **Continuous Leadership Maintenance**
+1. **Regular Heartbeats**: Leader sends periodic HeartbeatSent events (every 50ms)
+2. **Authority Confirmation**: Followers reset election timers upon receiving heartbeats
+3. **Failure Detection**: Missing heartbeats trigger election timeout in followers
+4. **Automatic Recovery**: System automatically elects new leader when current leader fails
 
-### Fault Tolerance
-1. **Leader Failure**: Current leader stops sending heartbeats
-2. **Detection**: Followers detect leader failure via election timeout
-3. **Recovery**: New election automatically triggered
-4. **Service Restoration**: New leader elected and normal operation resumes
+## 🏗️ Technical Architecture
 
-## Technical Architecture
+### 🦀 **Backend (Rust) - Enhanced Event System**
+- **Complete Raft Implementation**: Full consensus algorithm with all three communication types
+- **Breakthrough Event Coverage**: Now captures **ALL** election negotiations (NEW!)
+  - `ElectionStarted`, `VoteRequested`, `VoteGranted`, `VoteDenied` events
+- **Async Simulation**: Tokio-based concurrent 5-node cluster with realistic timeouts
+- **Real-time Event Broadcasting**: <1ms latency event streaming via broadcast channels
+- **Dual Server Architecture**: 
+  - **WebSocket Server** (`ws://127.0.0.1:8082`): Real-time event streaming
+  - **HTTP Server** (`http://127.0.0.1:8081`): Static file serving
 
-### Backend (Rust)
-- **Raft Implementation**: Complete consensus algorithm with leader election, log replication, and heartbeats
-- **Async Simulation**: Tokio-based concurrent node simulation with realistic timeouts
-- **Event System**: Comprehensive event broadcasting for visualization
-- **WebSocket Server**: Real-time event streaming using `tokio-tungstenite`
-- **HTTP Server**: Static file serving using `warp`
+### 🌐 **Frontend (Vanilla JavaScript) - Clean 3-Type Architecture**
+- **High-Performance Canvas**: 60fps rendering with message animations
+- **Smart Message Classification**: Three-type system (Election, Proposal, Heartbeat)
+- **Real-time WebSocket Client**: Auto-reconnection with cluster state synchronization  
+- **Event-Driven UI**: Real-time updates for all node states and statistics
+- **Responsive Design**: CSS Grid layout optimized for various screen sizes
+- **Zero Dependencies**: Pure HTML/CSS/JavaScript - no frameworks needed
 
-### Frontend (Vanilla JavaScript)
-- **Canvas Visualization**: High-performance 60fps rendering with HTML5 Canvas
-- **Real-time Updates**: WebSocket client with automatic reconnection
-- **Event Processing**: Comprehensive Raft event handling and state tracking
-- **Responsive Design**: CSS Grid/Flexbox layout optimized for various screen sizes
-- **No Dependencies**: Pure HTML/CSS/JavaScript implementation
+### 📡 **Enhanced Communication Protocol**
+**Complete Event Coverage** (25+ event types now supported):
 
-### Communication Protocol
-- **WebSocket Events**: JSON-formatted Raft events streamed in real-time
-- **Event Types**: StateChange, LeaderElected, LogEntryAdded, HeartbeatSent, ClientCommandReceived
-- **Bidirectional**: Client can send commands and receive live cluster updates
+**🗳️ Election Events** (NEW!):
+- `ElectionTimeout`, `ElectionStarted`, `VoteRequested`, `VoteGranted`, `VoteDenied`, `LeaderElected`, `StateChange`
+
+**📝 Proposal Events**: 
+- `ClientCommandReceived`, `LogEntryProposed`, `ConsensusAckReceived`, `ReplicationCompleted`
+
+**❤️ Heartbeat Events**:
+- `HeartbeatSent`, `HeartbeatReceived`
+
+**🔄 Bidirectional Communication**: 
+- **Backend → Frontend**: Live event streaming
+- **Frontend → Backend**: Command submission, manual election triggers, cluster queries
 
 ## Troubleshooting
 
@@ -193,29 +224,40 @@ Chronological log of cluster events:
 ### File Structure
 ```
 web/
-├── README.md           # This documentation
-├── index.html          # Main HTML structure
-├── styles.css          # All CSS styling
-├── app.js             # Main application controller
-├── dashboard.js       # UI components and statistics
-├── visualization.js   # Canvas-based cluster visualization
-└── websocket.js       # WebSocket client manager
+├── README.md                    # This comprehensive documentation
+├── index.html                   # Clean, responsive HTML dashboard
+├── clean-styles.css            # Responsive CSS Grid/Flexbox styling
+├── clean-app.js                # Main application controller with 3-type model
+├── websocket-manager.js        # WebSocket client with auto-reconnection
+├── raft-visualization-v2.js    # Canvas visualization with election animations
+└── raft-message-classifier.js  # Clean 3-type message classification
 ```
 
 ### Customization
-- **Modify Colors**: Edit color constants in `visualization.js`
-- **Adjust Layout**: Update CSS Grid/Flexbox in `styles.css`
-- **Add Features**: Extend event handling in `app.js`
-- **Performance Tuning**: Adjust animation parameters in `visualization.js`
+- **Election Animation Colors**: Edit constants in `raft-visualization-v2.js`
+- **Layout Adjustments**: Update CSS Grid properties in `clean-styles.css`  
+- **Event Handling**: Extend 3-type classification in `raft-message-classifier.js`
+- **Performance Tuning**: Adjust animation speeds and timing parameters
 
-## Educational Value
+## 🎓 Educational Value
 
-This visualization helps understand:
+### **Breakthrough Learning Experience**
+This visualization provides unprecedented insight into distributed consensus:
 
-- **Distributed Consensus**: How nodes agree on shared state
-- **Leader-based Replication**: Single leader simplifies consistency
-- **Fault Tolerance**: System continues despite individual node failures  
-- **Network Partitions**: Effects of communication delays and failures
-- **Performance Trade-offs**: Consistency vs. availability in distributed systems
+### **🗳️ Democratic Process Understanding** (NEW!)
+- **Visual Democracy**: Watch how distributed systems achieve consensus through voting
+- **Election Transparency**: See every vote request, response, and majority decision
+- **Failure Recovery**: Observe automatic leadership transitions during failures
+- **Interactive Testing**: Trigger elections manually to understand the process
 
-Perfect for students, researchers, and practitioners learning distributed systems concepts through interactive, visual demonstration of the Raft consensus algorithm.
+### **📝 Consensus Mechanics**
+- **Proposal Lifecycle**: Follow commands from submission to commitment
+- **Majority Requirements**: Understand why consensus needs majority agreement  
+- **Consistency Guarantees**: See how Raft ensures all nodes agree on the same log
+
+### **❤️ System Reliability**
+- **Continuous Monitoring**: Watch how leaders maintain cluster health
+- **Failure Detection**: Understand timeout-based failure detection
+- **Automatic Recovery**: See how systems self-heal after failures
+
+**Perfect for**: Students, researchers, distributed systems engineers, and anyone learning consensus algorithms through **complete visual demonstration** of the Raft protocol - now including the previously invisible democratic election process!

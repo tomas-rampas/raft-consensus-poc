@@ -183,7 +183,7 @@ async fn handle_incoming_message(
     match message {
         RpcMessage::AppendEntriesRequest { from, request, .. } => {
             // Only log AppendEntries with actual entries (not heartbeats)
-            if request.entries.len() > 0 {
+            if !request.entries.is_empty() {
                 info!(
                     node_id = node.id,
                     "📥 RECEIVED: AppendEntries from leader {} with {} entries (term: {})",
@@ -229,7 +229,7 @@ async fn handle_incoming_message(
                 RpcMessage::append_entries_response(node.id, from, response.clone());
 
             // Only log responses for AppendEntries with actual entries (not heartbeat responses)
-            if request.entries.len() > 0 {
+            if !request.entries.is_empty() {
                 info!(
                     node_id = node.id,
                     "📤 RESPONDING: AppendEntries response to leader {} → {}",
@@ -242,6 +242,14 @@ async fn handle_incoming_message(
                 );
             }
 
+            // RAFT PROTOCOL: Followers MUST respond to ALL AppendEntries RPCs (including heartbeats)
+            //
+            // This response serves critical functions in the Raft consensus protocol:
+            // - Confirms follower acceptance of leader authority and current term
+            // - Enables leader to detect network partitions and follower failures
+            // - Provides mechanism for term validation and leadership transitions
+            // - Maintains log consistency even for empty heartbeat messages
+            //
             // Emit MessageSent event for ACK/NACK response visualization
             let response_details = if response.success {
                 "ACK - AppendEntries accepted"
@@ -296,6 +304,18 @@ async fn handle_incoming_message(
                         let _ = event_broadcaster.emit(consensus_ack_event);
                     }
                 } else if response.success {
+                    // PROTOCOL COMPLIANCE: Heartbeat ACK responses are REQUIRED by Raft specification
+                    //
+                    // Per the original Raft paper "In Search of an Understandable Consensus Algorithm":
+                    // - AppendEntries serves dual purpose: log replication AND heartbeat mechanism
+                    // - ALL AppendEntries RPCs (including empty heartbeats) require responses
+                    // - Heartbeat responses are essential for:
+                    //   1. Leader authority validation (followers confirm they accept leader)
+                    //   2. Term consistency (allows leader to detect if superseded by higher term)
+                    //   3. Failure detection (missing responses indicate follower failure/partition)
+                    //   4. Log consistency (heartbeats carry leaderCommit index for consistency)
+                    //   5. Network partition detection (helps leader detect majority loss)
+                    //
                     // This was a heartbeat ACK - emit HeartbeatReceived event
                     let heartbeat_ack_event = crate::raft::events::RaftEvent::heartbeat_received(
                         from,
@@ -307,7 +327,7 @@ async fn handle_incoming_message(
                 }
 
                 // Only log consensus ACKs if there are any to emit
-                if consensus_acks.len() > 0 {
+                if !consensus_acks.is_empty() {
                     info!(
                         node_id = node.id,
                         "📊 Found {} consensus ACK(s) to emit for follower {}",
@@ -1027,7 +1047,7 @@ async fn send_append_entries_to_all_followers(
                 );
 
                 // Emit log replication sent event (separate from heartbeats)
-                if append_entries.entries.len() > 0 {
+                if !append_entries.entries.is_empty() {
                     // For each entry being sent, emit a LogEntryProposed event
                     // This represents proposal broadcast (Leader → Followers)
                     for (entry_index, entry) in append_entries.entries.iter().enumerate() {

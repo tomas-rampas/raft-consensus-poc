@@ -125,7 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Some(&"status") => {
                             println!("📊 Cluster Status:");
-                            println!("   Nodes: {}", cluster_size);
+                            println!("   Nodes: {cluster_size}");
                             println!("   Channel capacity: {}", cluster_channels.size());
                             println!("   Use RUST_LOG=debug for detailed node states");
                         }
@@ -142,8 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Some(cmd) => {
                             println!(
-                                "Unknown command: '{}'. Type 'help' for available commands.",
-                                cmd
+                                "Unknown command: '{cmd}'. Type 'help' for available commands."
                             );
                         }
                         None => continue,

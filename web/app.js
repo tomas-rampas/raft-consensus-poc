@@ -787,6 +787,77 @@ class RaftApp {
                 console.log('🏛️ Processing ClusterStatus in visualization update:', eventData);
                 // ClusterStatus is already handled above in handleRaftEvent - no additional animation needed
                 break;
+
+            case 'VoteRequested':
+                // Candidate requesting votes from other nodes
+                console.log('🗳️ Processing VoteRequested event:', eventData);
+                if (eventData && eventData.candidate_id !== undefined) {
+                    const candidateId = eventData.candidate_id;
+                    
+                    // Send vote request message from candidate to all other nodes
+                    for (let [targetId, targetNode] of this.visualization.nodes.entries()) {
+                        if (targetId !== candidateId) {
+                            this.visualization.addMessage({
+                                from: candidateId,
+                                to: targetId,
+                                type: 'vote_request',
+                                color: '#9966ff', // Purple for vote requests
+                                duration: 1000,
+                                timestamp: Date.now()
+                            });
+                            console.log(`🗳️ ANIMATION: Vote request from Node ${candidateId} to Node ${targetId}`);
+                        }
+                    }
+                }
+                break;
+
+            case 'VoteGranted':
+                // Voter granting vote to candidate
+                console.log('✅ Processing VoteGranted event:', eventData);
+                if (eventData && eventData.voter_id !== undefined && eventData.candidate_id !== undefined) {
+                    this.visualization.addAckMessage({
+                        from: eventData.voter_id,
+                        to: eventData.candidate_id,
+                        type: 'vote_granted',
+                        color: '#00ff88', // Bright green for granted votes
+                        duration: 800,
+                        timestamp: Date.now()
+                    });
+                    console.log(`✅ ANIMATION: Vote granted from Node ${eventData.voter_id} to Node ${eventData.candidate_id}`);
+                }
+                break;
+
+            case 'VoteDenied':
+                // Voter denying vote to candidate
+                console.log('❌ Processing VoteDenied event:', eventData);
+                if (eventData && eventData.voter_id !== undefined && eventData.candidate_id !== undefined) {
+                    this.visualization.addAckMessage({
+                        from: eventData.voter_id,
+                        to: eventData.candidate_id,
+                        type: 'vote_denied',
+                        color: '#ff4444', // Red for denied votes
+                        duration: 800,
+                        timestamp: Date.now()
+                    });
+                    console.log(`❌ ANIMATION: Vote denied from Node ${eventData.voter_id} to Node ${eventData.candidate_id}`);
+                }
+                break;
+
+            case 'HeartbeatReceived':
+                // Follower acknowledging heartbeat from leader
+                console.log('💓 Processing HeartbeatReceived event:', eventData);
+                if (eventData && eventData.follower_id !== undefined && eventData.leader_id !== undefined) {
+                    this.visualization.addAckMessage({
+                        from: eventData.follower_id,
+                        to: eventData.leader_id,
+                        type: 'heartbeat_ack',
+                        color: '#88ccff', // Light blue for heartbeat ACKs
+                        duration: 400, // Faster than other messages since heartbeats are frequent
+                        timestamp: Date.now()
+                    });
+                    console.log(`💓 ANIMATION: Heartbeat ACK from Node ${eventData.follower_id} to Node ${eventData.leader_id}`);
+                }
+                break;
                 
             default:
                 console.log('🤷 Unhandled event type for animation:', eventType, event);

@@ -443,10 +443,6 @@ impl RaftEvent {
         )
     }
 
-    /// Creates a log replication sent event
-
-    /// Creates a replication ACK received event
-
     /// Creates a replication completed event
     pub fn replication_completed(
         leader_id: NodeId,
@@ -561,10 +557,10 @@ impl EventBroadcaster {
                 message_type,
                 ..
             } => {
-                write!(&mut key, "MessageSent:{}:{}:{}", from, to, message_type).ok();
+                write!(&mut key, "MessageSent:{from}:{to}:{message_type}").ok();
             }
             RaftEventType::HeartbeatSent { leader_id, .. } => {
-                write!(&mut key, "HeartbeatSent:{}", leader_id).ok();
+                write!(&mut key, "HeartbeatSent:{leader_id}").ok();
             }
             RaftEventType::StateChange {
                 from_state,
@@ -579,7 +575,7 @@ impl EventBroadcaster {
                 .ok();
             }
             RaftEventType::LeaderElected { leader_id, .. } => {
-                write!(&mut key, "LeaderElected:{}", leader_id).ok();
+                write!(&mut key, "LeaderElected:{leader_id}").ok();
             }
             RaftEventType::ReplicationCompleted {
                 leader_id,
@@ -588,8 +584,7 @@ impl EventBroadcaster {
             } => {
                 write!(
                     &mut key,
-                    "ReplicationCompleted:{}:{}",
-                    leader_id, consensus_term
+                    "ReplicationCompleted:{leader_id}:{consensus_term}"
                 )
                 .ok();
             }
@@ -602,8 +597,7 @@ impl EventBroadcaster {
             } => {
                 write!(
                     &mut key,
-                    "ConsensusAck:{}:{}:{}:{}",
-                    from_follower, to_leader, proposal_index, success
+                    "ConsensusAck:{from_follower}:{to_leader}:{proposal_index}:{success}"
                 )
                 .ok();
             }

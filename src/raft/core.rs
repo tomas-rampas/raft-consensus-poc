@@ -133,7 +133,7 @@ impl PendingProposal {
 
     /// Checks if this proposal has achieved majority consensus
     pub fn has_majority(&self, cluster_size: usize) -> bool {
-        self.acknowledgments.len() >= (cluster_size / 2) + 1
+        self.acknowledgments.len() > (cluster_size / 2)
     }
 }
 
