@@ -470,11 +470,11 @@ async fn handle_incoming_message(
                 eprintln!("Failed to send RequestVote response: {e:?}");
             }
         }
-        RpcMessage::RequestVoteResponse { response, .. } => {
+        RpcMessage::RequestVoteResponse { from, response, .. } => {
             if matches!(node.state, NodeState::Candidate) {
                 // Capture state BEFORE processing response to get accurate transition
                 let old_state = node.state.clone();
-                let became_leader = node.process_vote_response(&response);
+                let became_leader = node.process_vote_response(from, &response);
                 if became_leader {
 
                     // Capture vote count BEFORE calling become_leader() (which resets votes_received to 0)
@@ -935,13 +935,11 @@ async fn send_vote_requests(
     cluster_channels: &ClusterChannels,
     event_broadcaster: &EventBroadcaster,
 ) {
-    let requests = node.create_vote_requests();
-
-    if !requests.is_empty() {
-        let request_count = requests.len();
-        
+    if let Some(request) = node.create_vote_request() {
         // Emit ElectionStarted event when candidate begins requesting votes
         let majority = (node.cluster_size / 2) + 1;
+        let target_count = node.cluster_size - 1; // All nodes except self
+        
         let election_started_event = RaftEvent::election_started(
             node.id,
             node.persistent_state.current_term,
@@ -953,31 +951,29 @@ async fn send_vote_requests(
             node_id = node.id,
             "🗳️ ELECTION STARTED: Candidate {} requesting votes from {} nodes for term {} (need {}/{} votes)",
             node.id,
-            request_count,
+            target_count,
             node.persistent_state.current_term,
             majority,
             node.cluster_size
         );
 
-        // Send vote requests and emit VoteRequested events
-        for request in requests {
-            // Emit VoteRequested event for each vote request
-            let vote_requested_event = RaftEvent::vote_requested(
-                node.id,
-                request.term,
-                request.last_log_index,
-                request.last_log_term,
-            );
-            let _ = event_broadcaster.emit(vote_requested_event);
+        // Emit one VoteRequested event for the broadcast
+        let vote_requested_event = RaftEvent::vote_requested(
+            node.id,
+            request.term,
+            request.last_log_index,
+            request.last_log_term,
+        );
+        let _ = event_broadcaster.emit(vote_requested_event);
 
-            let message = RpcMessage::request_vote_request(node.id, 0, request); // 'to' will be updated by broadcast
-            cluster_channels.broadcast(message, node.id);
-        }
+        // Broadcast one request to all other nodes
+        let message = RpcMessage::request_vote_request(node.id, 0, request); // 'to' will be updated by broadcast
+        cluster_channels.broadcast(message, node.id);
 
         info!(
             node_id = node.id,
-            "📤 VOTE REQUESTS SENT: {} RequestVote messages broadcasted for election term {}",
-            request_count,
+            "📤 VOTE REQUESTS SENT: RequestVote broadcasted to {} nodes for election term {}",
+            target_count,
             node.persistent_state.current_term
         );
     }

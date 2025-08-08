@@ -40,15 +40,7 @@ impl Node {
                 request.term,
                 request.leader_id
             );
-            self.persistent_state.current_term = request.term;
-            self.persistent_state.voted_for = None;
-            if !matches!(self.state, NodeState::Follower) {
-                info!(
-                    node_id = self.id,
-                    "Stepping down to Follower from {:?}", self.state
-                );
-            }
-            self.state = NodeState::Follower;
+            self.become_follower(Some(request.term));
         }
 
         // If the incoming term is less than our current term, reject
@@ -73,7 +65,7 @@ impl Node {
                 node_id = self.id,
                 "Stepping down to Follower from {:?} due to valid leader contact", self.state
             );
-            self.state = NodeState::Follower;
+            self.become_follower(None);
         }
 
         // Update our knowledge of current leader
@@ -120,9 +112,7 @@ impl Node {
     pub fn handle_request_vote(&mut self, request: &RequestVoteRequest) -> RequestVoteResponse {
         // If the incoming term is greater than our current term, update and step down
         if request.term > self.persistent_state.current_term {
-            self.persistent_state.current_term = request.term;
-            self.persistent_state.voted_for = None;
-            self.state = NodeState::Follower;
+            self.become_follower(Some(request.term));
         }
 
         // If the incoming term is less than our current term, reject
@@ -158,6 +148,26 @@ impl Node {
         }
     }
 
+    /// Transitions this node to follower state and clears election data
+    pub fn become_follower(&mut self, new_term: Option<u64>) {
+        if let Some(term) = new_term {
+            self.persistent_state.current_term = term;
+            self.persistent_state.voted_for = None;
+        }
+        
+        if !matches!(self.state, NodeState::Follower) {
+            info!(
+                node_id = self.id,
+                "Stepping down to Follower from {:?}", self.state
+            );
+        }
+        
+        self.state = NodeState::Follower;
+        self.votes_received = 0;
+        self.votes_from.clear();
+        self.leader_state = None;
+    }
+
     /// Transitions this node to candidate state and starts an election
     pub fn become_candidate(&mut self) {
         info!(
@@ -170,6 +180,8 @@ impl Node {
         self.persistent_state.current_term += 1;
         self.persistent_state.voted_for = Some(self.id);
         self.votes_received = 1; // Vote for self
+        self.votes_from.clear();
+        self.votes_from.insert(self.id); // Track self-vote
         self.reset_election_timer();
         info!(
             node_id = self.id,
@@ -180,7 +192,7 @@ impl Node {
     }
 
     /// Processes a vote response and returns true if this node should become leader
-    pub fn process_vote_response(&mut self, response: &RequestVoteResponse) -> bool {
+    pub fn process_vote_response(&mut self, from_node: NodeId, response: &RequestVoteResponse) -> bool {
         // Check if we're still a candidate and the response is for our current term
         if !matches!(self.state, NodeState::Candidate)
             || response.term != self.persistent_state.current_term
@@ -190,19 +202,31 @@ impl Node {
 
         // If the response term is higher, step down
         if response.term > self.persistent_state.current_term {
-            self.persistent_state.current_term = response.term;
-            self.persistent_state.voted_for = None;
-            self.state = NodeState::Follower;
+            self.become_follower(Some(response.term));
             return false;
         }
 
-        // If vote was granted, increment count
+        // If vote was granted, check for duplicates and increment count
         if response.vote_granted {
+            // DEDUPLICATION: Check if this node already voted for us
+            if self.votes_from.contains(&from_node) {
+                debug!(
+                    node_id = self.id,
+                    "⚠️  Duplicate vote from Node {} ignored (already counted for term {})",
+                    from_node,
+                    self.persistent_state.current_term
+                );
+                return false; // Don't process duplicate votes
+            }
+            
+            // Record this vote and increment count
+            self.votes_from.insert(from_node);
             self.votes_received += 1;
             let majority = (self.cluster_size / 2) + 1;
             info!(
                 node_id = self.id,
-                "✅ Vote granted! Now have {}/{} votes for term {}",
+                "✅ Vote granted from Node {}! Now have {}/{} votes for term {}",
+                from_node,
                 self.votes_received,
                 majority,
                 self.persistent_state.current_term
@@ -418,10 +442,7 @@ impl Node {
 
         // If response term is higher, step down
         if response.term > self.persistent_state.current_term {
-            self.persistent_state.current_term = response.term;
-            self.persistent_state.voted_for = None;
-            self.state = NodeState::Follower;
-            self.leader_state = None;
+            self.become_follower(Some(response.term));
             return Vec::new();
         }
 
@@ -569,26 +590,17 @@ impl Node {
         committed_proposals
     }
 
-    /// Creates RequestVote requests for all other nodes in the cluster
-    pub fn create_vote_requests(&self) -> Vec<RequestVoteRequest> {
+    /// Creates a single RequestVote request template for broadcasting to all other nodes
+    pub fn create_vote_request(&self) -> Option<RequestVoteRequest> {
         if !matches!(self.state, NodeState::Candidate) {
-            return Vec::new();
+            return None;
         }
 
-        let mut requests = Vec::new();
-
-        for node_id in 0..self.cluster_size {
-            if node_id != self.id {
-                let request = RequestVoteRequest::new(
-                    self.persistent_state.current_term,
-                    self.id,
-                    self.last_log_index(),
-                    self.last_log_term(),
-                );
-                requests.push(request);
-            }
-        }
-
-        requests
+        Some(RequestVoteRequest::new(
+            self.persistent_state.current_term,
+            self.id,
+            self.last_log_index(),
+            self.last_log_term(),
+        ))
     }
 }

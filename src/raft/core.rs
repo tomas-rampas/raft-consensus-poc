@@ -1,6 +1,6 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::time::{Duration, Instant};
 
@@ -186,6 +186,8 @@ pub struct Node {
     pub current_leader_id: Option<NodeId>,
     /// Current term for candidate vote tracking
     pub votes_received: usize,
+    /// Track which nodes have voted for this candidate in current election
+    pub votes_from: HashSet<NodeId>,
     /// Temporary failure simulation - when Some, node is "failed" until this time
     pub simulated_failure_until: Option<Instant>,
 }
@@ -206,6 +208,7 @@ impl Node {
             heartbeat_interval: Duration::from_millis(200), // 200ms heartbeat interval - reduced replication message frequency
             current_leader_id: None,
             votes_received: 0,
+            votes_from: HashSet::new(),
             simulated_failure_until: None,
         };
 
